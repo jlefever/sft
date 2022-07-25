@@ -60,7 +60,7 @@ impl<TNodeId: Copy + Default + Eq + Hash> EdgeSet<TNodeId> {
     }
 }
 
-struct KindedEdgeSet<TNodeId: Copy + Default + Eq + Hash> {
+pub struct KindedEdgeSet<TNodeId: Copy + Default + Eq + Hash> {
     edge_sets: HashMap<String, EdgeSet<TNodeId>>,
 }
 
@@ -140,20 +140,20 @@ impl<TNodeId: Eq + Hash> FactBook<TNodeId> {
 }
 
 #[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq)]
-struct NodeId(usize);
+pub struct NodeId(usize);
 
 pub struct NodeHolder<TNode: Eq + Hash> {
     nodes: BiHashMap<TNode, NodeId>,
 }
 
 impl<TNode: Eq + Hash> NodeHolder<TNode> {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             nodes: BiHashMap::new(),
         }
     }
 
-    fn add(&mut self, node: TNode) -> NodeId {
+    pub fn add(&mut self, node: TNode) -> NodeId {
         if let Some(node_id) = self.nodes.get_by_left(&node) {
             *node_id
         } else {
@@ -163,55 +163,8 @@ impl<TNode: Eq + Hash> NodeHolder<TNode> {
         }
     }
 
-    fn get(&self, id: &NodeId) -> Option<&TNode> {
+    pub fn get(&self, id: &NodeId) -> Option<&TNode> {
         self.nodes.get_by_right(id)
-    }
-}
-
-#[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq)]
-pub struct TicketId(NodeId);
-
-pub struct KytheGraph<TTicket: Eq + Hash> {
-    nodes: NodeHolder<TTicket>,
-    edges: KindedEdgeSet<TicketId>,
-    facts: FactBook<TicketId>,
-}
-
-impl<TTicket: Eq + Hash> KytheGraph<TTicket> {
-    pub fn new() -> Self {
-        Self {
-            nodes: NodeHolder::new(),
-            edges: KindedEdgeSet::new(),
-            facts: FactBook::new(),
-        }
-    }
-
-    pub fn add_ticket(&mut self, ticket: TTicket) -> TicketId {
-        TicketId(self.nodes.add(ticket))
-    }
-
-    pub fn add_edge(&mut self, edge_kind: String, src: TicketId, tgt: TicketId) {
-        self.edges.add(edge_kind, src, tgt);
-    }
-
-    pub fn add_fact(&mut self, id: TicketId, name: String, value: String) {
-        self.facts.add(id, name, value);
-    }
-
-    pub fn get_ticket(&self, id: &TicketId) -> Option<&TTicket> {
-        self.nodes.get(&id.0)
-    }
-
-    pub fn get_fact(&self, id: &TicketId, name: &str) -> Option<&str> {
-        self.facts.get(id, name)
-    }
-
-    pub fn get_edge_set(&self, edge_kind: &str) -> Option<&EdgeSet<TicketId>> {
-        self.edges.get_edge_set(edge_kind)
-    }
-
-    pub fn get_all_outgoing(&self, src: &TicketId) -> HashSet<(&str, TicketId, TicketId)> {
-        self.edges.all_outgoing(src)
     }
 }
 
