@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use bimap::BiHashMap;
 use std::{
     collections::{HashMap, HashSet},
