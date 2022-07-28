@@ -1,4 +1,5 @@
 use log;
+use std::fmt::Debug;
 use std::fs;
 use std::io;
 
@@ -25,7 +26,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum CliSubCommand {
-    Exclude(ExcludeCommand),
+    Exclude(CliExcludeCommand),
 }
 
 /// Exclude entries that meet the supplied conditions.
@@ -41,7 +42,7 @@ enum CliSubCommand {
 /// On Windows, it is recommended to use --input/--output rather than stdin/stdout for both
 /// performance reasons and compatibility reasons (Windows console does not support UTF-8).
 #[derive(Args)]
-struct ExcludeCommand {
+struct CliExcludeCommand {
     /// Path of the file to read entries from. If ommitted, read from stdin.
     #[clap(short = 'i', value_name = "PATH", long, display_order = 1)]
     input: Option<PathBuf>,
@@ -266,7 +267,7 @@ struct ExcludeCommand {
     keep_nodes: bool,
 }
 
-impl ExcludeCommand {
+impl CliExcludeCommand {
     fn execute(&self) {
         let mut input = create_input(self.input.as_ref()).unwrap();
         let mut output = create_output(self.output.as_ref()).unwrap();
@@ -332,7 +333,15 @@ impl ExcludeCommand {
             rules.push(Box::new(rule));
         }
 
-        log::debug!("Starting exclusion process with {} rule(s)...", rules.len());
+        log::debug!(
+            "Found the following {} exclusion rule(s) from the command line:",
+            rules.len()
+        );
+        for rule in &rules {
+            log::debug!("{:#?}", rule);
+        }
+        log::info!("Starting exclusion process...");
+
         let start = Instant::now();
 
         let mut buf = String::new();
@@ -354,7 +363,7 @@ impl ExcludeCommand {
             buf.clear();
         }
 
-        log::debug!(
+        log::info!(
             "Excluded {} out of {} entries in {} secs.",
             num_excluded,
             num_lines,
@@ -413,10 +422,11 @@ impl EdgeExclusionKind {
     }
 }
 
-trait Exclusion {
+trait Exclusion: Debug {
     fn is_excluded(&self, entry: &Entry) -> bool;
 }
 
+#[derive(Debug)]
 enum FactExclusionKind {
     Both,
     Edge,
@@ -435,6 +445,7 @@ impl FactExclusionKind {
     }
 }
 
+#[derive(Debug)]
 struct FactBasedExclusion {
     kind: FactExclusionKind,
     pattern: Pattern,
@@ -461,6 +472,7 @@ impl Exclusion for FactBasedExclusion {
     }
 }
 
+#[derive(Debug)]
 struct TickedBasedExclusion {
     kind: EdgeExclusionKind,
     ticket_rule: Box<dyn TicketExclusion>,
@@ -500,11 +512,11 @@ impl Exclusion for TickedBasedExclusion {
     }
 }
 
-trait TicketExclusion {
+trait TicketExclusion: Debug {
     fn is_excluded(&self, ticket: &Ticket) -> bool;
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 enum PathKind {
     NilPathed,
     RelPathed,
@@ -523,6 +535,7 @@ impl PathKind {
     }
 }
 
+#[derive(Debug)]
 struct PathKindBasedExclusion {
     kind: PathKind,
 }
@@ -539,6 +552,7 @@ impl TicketExclusion for PathKindBasedExclusion {
     }
 }
 
+#[derive(Debug)]
 struct PathPatternBasedExclusion {
     pattern: Pattern,
 }
