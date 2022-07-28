@@ -493,7 +493,7 @@ impl Exclusion for TickedBasedExclusion {
                 EdgeExclusionKind::Tgt => is_excluded(tgt),
             },
             Entry::Node { src, .. } => match self.kind {
-                EdgeExclusionKind::Any => self.keep_nodes && is_excluded(src),
+                EdgeExclusionKind::Any => !self.keep_nodes && is_excluded(src),
                 _ => false,
             },
         }
