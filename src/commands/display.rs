@@ -43,14 +43,7 @@ impl CliCommand for CliDisplayCommand {
             let mut writer = DotWriter::from(&mut output_bytes);
             let mut digraph = writer.digraph();
 
-            // /kythe/edge/childof
-            // /kythe/edge/ref/call
-            let childofs = graph
-                .get_edge_set("/kythe/edge/ref/call")
-                .unwrap()
-                .to_pairs();
-
-            for (src, tgt) in childofs {
+            for (kind, src, tgt) in graph.edges.iter() {
                 let src_name = String::from(src);
                 let tgt_name = String::from(tgt);
 
@@ -59,11 +52,6 @@ impl CliCommand for CliDisplayCommand {
 
                 let src_path = src_ticket.path.as_ref().unwrap();
                 let tgt_path = tgt_ticket.path.as_ref().unwrap();
-
-                // let src_path = src_path.replace("/", "_");
-                // let src_path = src_path.replace(".", "_");
-                // let tgt_path = tgt_path.replace("/", "_");
-                // let tgt_path = tgt_path.replace(".", "_");
 
                 let src_label = format!("{} ({})", String::from(src), src_path);
                 let tgt_label = format!("{} ({})", String::from(tgt), tgt_path);
@@ -78,16 +66,10 @@ impl CliCommand for CliDisplayCommand {
                     tgt_node.set_label(&tgt_label);
                 }
 
-                let edge = digraph.edge(&src_name, &tgt_name);
-                edge.attributes().set_label("call");
+                let edge_label = kind.strip_prefix("/kythe/edge/").unwrap();
+                digraph.edge(&src_name, &tgt_name).attributes().set_label(edge_label);
             }
         }
-
-        // writer
-        //     .digraph()
-        //     .edge("1", "2")
-        //     .attributes()
-        //     .set_label("ref/call");
 
         output.write_all(&output_bytes).unwrap();
     }

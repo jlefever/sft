@@ -1,4 +1,4 @@
-use crate::data_structures::{EdgeSet, FactBook, KindedEdgeSet, NodeHolder, NodeId};
+use crate::data_structures::{FactBook, KindedEdgeSet, NodeHolder, NodeId};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::io::BufRead;
@@ -29,9 +29,9 @@ impl From<TicketId> for String {
 }
 
 pub struct KytheGraph<TTicket: Eq + Hash> {
-    nodes: NodeHolder<TTicket>,
-    edges: KindedEdgeSet<TicketId>,
-    facts: FactBook<TicketId>,
+    pub nodes: NodeHolder<TTicket>,
+    pub edges: KindedEdgeSet<TicketId>,
+    pub facts: FactBook<TicketId>,
 }
 
 impl<TTicket: Eq + Hash> KytheGraph<TTicket> {
@@ -57,10 +57,6 @@ impl<TTicket: Eq + Hash> KytheGraph<TTicket> {
 
     pub fn get_ticket(&self, id: &TicketId) -> Option<&TTicket> {
         self.nodes.get(&id.0)
-    }
-
-    pub fn get_edge_set(&self, edge_kind: &str) -> Option<&EdgeSet<TicketId>> {
-        self.edges.get_edge_set(edge_kind)
     }
 
     #[allow(dead_code)]

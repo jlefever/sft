@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use bimap::BiHashMap;
 use std::{
     collections::{HashMap, HashSet},
@@ -32,32 +31,16 @@ impl<TNodeId: Copy + Default + Eq + Hash> EdgeSet<TNodeId> {
         self.outgoing.get(src)
     }
 
-    pub fn to_pairs(&self) -> Vec<(TNodeId, TNodeId)> {
-        let mut pairs = Vec::new();
-
-        for (src, outgoing) in &self.outgoing {
-            for tgt in outgoing {
-                pairs.push((*src, *tgt));
-            }
-        }
-
-        return pairs;
-    }
-
     pub fn contains(&self, src: &TNodeId, tgt: &TNodeId) -> bool {
         self.outgoing(src)
             .map(|x| x.contains(tgt))
             .unwrap_or_default()
     }
 
-    pub fn len(&self) -> usize {
-        let mut total = 0;
-
-        for (_, map) in &self.incoming {
-            total += map.len();
-        }
-
-        return total;
+    pub fn iter(&self) -> impl Iterator<Item = (TNodeId, TNodeId)> + '_ {
+        self.outgoing
+            .iter()
+            .flat_map(|(src, tgts)| tgts.iter().map(move |tgt| (*src, *tgt)))
     }
 }
 
@@ -84,29 +67,11 @@ impl<TNodeId: Copy + Default + Eq + Hash> KindedEdgeSet<TNodeId> {
         self.edge_sets.get(edge_kind).and_then(|x| x.outgoing(src))
     }
 
-    pub fn all_outgoing(&self, src: &TNodeId) -> HashSet<(&str, TNodeId, TNodeId)> {
-        let mut out = HashSet::new();
-
-        for (edge_kind, edge_set) in &self.edge_sets {
-            if let Some(outgoing) = edge_set.outgoing(src) {
-                for tgt in outgoing {
-                    out.insert((edge_kind.as_str(), *src, *tgt));
-                }
-            }
-        }
-
-        return out;
-    }
-
     pub fn contains(&self, edge_kind: &str, src: &TNodeId, tgt: &TNodeId) -> bool {
         self.edge_sets
             .get(edge_kind)
             .map(|x| x.contains(src, tgt))
             .unwrap_or_default()
-    }
-
-    pub fn get_edge_set(&self, edge_kind: &str) -> Option<&EdgeSet<TNodeId>> {
-        return self.edge_sets.get(edge_kind)
     }
 
     pub fn between(&self, src: &TNodeId, tgt: &TNodeId) -> HashSet<&str> {
@@ -117,6 +82,14 @@ impl<TNodeId: Copy + Default + Eq + Hash> KindedEdgeSet<TNodeId> {
             }
         }
         return out;
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&str, TNodeId, TNodeId)> + '_ {
+        self.edge_sets.iter().flat_map(|(kind, edge_set)| {
+            edge_set
+                .iter()
+                .map(move |(src, tgt)| (kind.as_str(), src, tgt))
+        })
     }
 }
 
