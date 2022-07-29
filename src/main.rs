@@ -1,7 +1,10 @@
-mod base;
 mod commands;
+mod data_structures;
+mod kythe;
+mod util;
 
 use clap::{Parser, Subcommand};
+use commands::CliCommand;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -20,6 +23,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum CliSubCommand {
+    Display(commands::display::CliDisplayCommand),
     Exclude(commands::exclude::CliExcludeCommand),
 }
 
@@ -42,7 +46,8 @@ fn main() {
     match cli.command {
         None => std::process::exit(0),
         Some(command) => match command {
-            CliSubCommand::Exclude(exclude) => exclude.execute(),
+            CliSubCommand::Exclude(com) => com.execute(),
+            CliSubCommand::Display(com) => com.execute(),
         },
     }
 }

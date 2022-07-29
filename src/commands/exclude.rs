@@ -1,11 +1,14 @@
-use crate::base::{collapse, create_input, create_output, Entry, Ticket};
+use crate::kythe;
+use crate::util;
 
 use log;
 use std::fmt::Debug;
 use std::io;
 
-use std::str::FromStr;
+use std::path::Path;
 use std::{path::PathBuf, time::Instant};
+
+use super::CliCommand;
 
 /// Exclude entries that meet the supplied conditions.
 ///
@@ -245,10 +248,10 @@ pub struct CliExcludeCommand {
     keep_nodes: bool,
 }
 
-impl CliExcludeCommand {
-    pub fn execute(&self) {
-        let mut input = create_input(self.input.as_ref()).unwrap();
-        let mut output = create_output(self.output.as_ref()).unwrap();
+impl CliCommand for CliExcludeCommand {
+    fn execute(&self) {
+        let mut input = util::create_input(self.input.as_ref()).unwrap();
+        let mut output = util::create_output(self.output.as_ref()).unwrap();
 
         let mut rules: Vec<Box<dyn Exclusion>> = Vec::new();
 
@@ -296,7 +299,7 @@ impl CliExcludeCommand {
             self.by_tgt_path.is_some(),
         );
 
-        let pathmatch_pattern = collapse(vec![
+        let pathmatch_pattern = util::collapse(vec![
             self.by_path.as_ref(),
             self.by_any_path.as_ref(),
             self.by_all_path.as_ref(),
@@ -305,8 +308,10 @@ impl CliExcludeCommand {
         ]);
 
         if let Some(exclusion_kind) = pathmatch_kind {
-            let pattern = glob::Pattern::from_str(pathmatch_pattern.unwrap()).unwrap();
-            let ticket_rule = Box::new(PathPatternBasedExclusion::new(pattern));
+            let matcher = globset::Glob::new(pathmatch_pattern.unwrap())
+                .unwrap()
+                .compile_matcher();
+            let ticket_rule = Box::new(PathPatternBasedExclusion::new(matcher));
             let rule = TickedBasedExclusion::new(exclusion_kind, ticket_rule, self.keep_nodes);
             rules.push(Box::new(rule));
         }
@@ -327,7 +332,7 @@ impl CliExcludeCommand {
         let mut num_excluded = 0u128;
         'outer: while io::BufRead::read_line(&mut input, &mut buf).unwrap() != 0 {
             num_lines = num_lines + 1;
-            let entry: Entry = serde_json::from_str(&buf).unwrap();
+            let entry: kythe::Entry = serde_json::from_str(&buf).unwrap();
 
             for rule in &rules {
                 if rule.is_excluded(&entry) {
@@ -372,7 +377,7 @@ impl EdgeExclusionKind {
 }
 
 trait Exclusion: Debug {
-    fn is_excluded(&self, entry: &Entry) -> bool;
+    fn is_excluded(&self, entry: &kythe::Entry) -> bool;
 }
 
 #[allow(dead_code)]
@@ -399,26 +404,26 @@ impl FactExclusionKind {
 #[derive(Debug)]
 struct FactBasedExclusion {
     kind: FactExclusionKind,
-    pattern: glob::Pattern,
+    matcher: globset::GlobMatcher,
 }
 
 #[allow(dead_code)]
 impl FactBasedExclusion {
-    fn new(kind: FactExclusionKind, pattern: glob::Pattern) -> Self {
-        Self { kind, pattern }
+    fn new(kind: FactExclusionKind, matcher: globset::GlobMatcher) -> Self {
+        Self { kind, matcher }
     }
 }
 
 impl Exclusion for FactBasedExclusion {
-    fn is_excluded(&self, entry: &Entry) -> bool {
+    fn is_excluded(&self, entry: &kythe::Entry) -> bool {
         match entry {
-            Entry::Edge { fact_name, .. } => match self.kind {
+            kythe::Entry::Edge { fact_name, .. } => match self.kind {
                 FactExclusionKind::Node => false,
-                _ => self.pattern.matches(fact_name),
+                _ => self.matcher.is_match(fact_name),
             },
-            Entry::Node { fact_name, .. } => match self.kind {
+            kythe::Entry::Node { fact_name, .. } => match self.kind {
                 FactExclusionKind::Edge => false,
-                _ => self.pattern.matches(fact_name),
+                _ => self.matcher.is_match(fact_name),
             },
         }
     }
@@ -446,17 +451,17 @@ impl TickedBasedExclusion {
 }
 
 impl Exclusion for TickedBasedExclusion {
-    fn is_excluded(&self, entry: &Entry) -> bool {
-        let is_excluded = |t: &Ticket| self.ticket_rule.is_excluded(t);
+    fn is_excluded(&self, entry: &kythe::Entry) -> bool {
+        let is_excluded = |t: &kythe::Ticket| self.ticket_rule.is_excluded(t);
 
         match entry {
-            Entry::Edge { src, tgt, .. } => match self.kind {
+            kythe::Entry::Edge { src, tgt, .. } => match self.kind {
                 EdgeExclusionKind::Any => is_excluded(src) || is_excluded(tgt),
                 EdgeExclusionKind::All => is_excluded(src) && is_excluded(tgt),
                 EdgeExclusionKind::Src => is_excluded(src),
                 EdgeExclusionKind::Tgt => is_excluded(tgt),
             },
-            Entry::Node { src, .. } => match self.kind {
+            kythe::Entry::Node { src, .. } => match self.kind {
                 EdgeExclusionKind::Any => !self.keep_nodes && is_excluded(src),
                 _ => false,
             },
@@ -465,7 +470,7 @@ impl Exclusion for TickedBasedExclusion {
 }
 
 trait TicketExclusion: Debug {
-    fn is_excluded(&self, ticket: &Ticket) -> bool;
+    fn is_excluded(&self, ticket: &kythe::Ticket) -> bool;
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -499,27 +504,27 @@ impl PathKindBasedExclusion {
 }
 
 impl TicketExclusion for PathKindBasedExclusion {
-    fn is_excluded(&self, ticket: &Ticket) -> bool {
+    fn is_excluded(&self, ticket: &kythe::Ticket) -> bool {
         self.kind == PathKind::of(ticket.path.as_ref())
     }
 }
 
 #[derive(Debug)]
 struct PathPatternBasedExclusion {
-    pattern: glob::Pattern,
+    matcher: globset::GlobMatcher,
 }
 
 impl PathPatternBasedExclusion {
-    fn new(pattern: glob::Pattern) -> Self {
-        Self { pattern }
+    fn new(matcher: globset::GlobMatcher) -> Self {
+        Self { matcher }
     }
 }
 
 impl TicketExclusion for PathPatternBasedExclusion {
-    fn is_excluded(&self, ticket: &Ticket) -> bool {
+    fn is_excluded(&self, ticket: &kythe::Ticket) -> bool {
         match &ticket.path {
             None => false,
-            Some(path) => self.pattern.matches(path),
+            Some(path) => !self.matcher.is_match(Path::new(path)),
         }
     }
 }

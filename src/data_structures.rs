@@ -143,6 +143,18 @@ impl<TNodeId: Eq + Hash> FactBook<TNodeId> {
 #[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct NodeId(usize);
 
+impl From<NodeId> for usize {
+    fn from(id: NodeId) -> Self {
+        id.0
+    }
+}
+
+impl From<NodeId> for String {
+    fn from(id: NodeId) -> Self {
+        id.0.to_string()
+    }
+}
+
 pub struct NodeHolder<TNode: Eq + Hash> {
     nodes: BiHashMap<TNode, NodeId>,
 }

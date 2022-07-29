@@ -1,16 +1,32 @@
-#![allow(dead_code)]
 use crate::data_structures::{EdgeSet, FactBook, KindedEdgeSet, NodeHolder, NodeId};
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::io::{BufRead, BufWriter, Write};
+use std::io::BufRead;
 use std::{
-    collections::HashSet,
     hash::Hash,
     io::{BufReader, Read},
 };
 
 #[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct TicketId(NodeId);
+
+impl From<TicketId> for NodeId {
+    fn from(id: TicketId) -> Self {
+        id.0
+    }
+}
+
+impl From<TicketId> for usize {
+    fn from(id: TicketId) -> Self {
+        Self::from(id.0)
+    }
+}
+
+impl From<TicketId> for String {
+    fn from(id: TicketId) -> Self {
+        Self::from(id.0)
+    }
+}
 
 pub struct KytheGraph<TTicket: Eq + Hash> {
     nodes: NodeHolder<TTicket>,
@@ -43,24 +59,15 @@ impl<TTicket: Eq + Hash> KytheGraph<TTicket> {
         self.nodes.get(&id.0)
     }
 
-    pub fn get_fact(&self, id: &TicketId, name: &str) -> Option<&str> {
-        self.facts.get(id, name)
-    }
-
     pub fn get_edge_set(&self, edge_kind: &str) -> Option<&EdgeSet<TicketId>> {
         self.edges.get_edge_set(edge_kind)
     }
 
-    pub fn get_all_outgoing(&self, src: &TicketId) -> HashSet<(&str, TicketId, TicketId)> {
-        self.edges.all_outgoing(src)
+    #[allow(dead_code)]
+    pub fn get_fact(&self, id: &TicketId, name: &str) -> Option<&str> {
+        self.facts.get(id, name)
     }
 }
-
-pub static KE_REF_CALL: &str = "/kythe/edge/ref/call";
-pub static KE_DEFINES: &str = "/kythe/edge/defines";
-pub static KE_DEFINES_BINDING: &str = "/kythe/edge/defines/binding";
-pub static KE_DEFINES_IMPLICIT: &str = "/kythe/edge/defines/implicit";
-pub static KN_KIND: &str = "/kythe/node/kind";
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
 pub struct Ticket {
@@ -69,6 +76,26 @@ pub struct Ticket {
     pub path: Option<String>,
     pub root: Option<String>,
     pub signature: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum Entry {
+    Edge {
+        #[serde(rename = "source")]
+        src: Ticket,
+        #[serde(rename = "target")]
+        tgt: Ticket,
+        edge_kind: Option<String>,
+        fact_name: String,
+        fact_value: Option<String>,
+    },
+    Node {
+        #[serde(rename = "source")]
+        src: Ticket,
+        fact_name: String,
+        fact_value: Option<String>,
+    },
 }
 
 pub fn read_lines<R: Read>(reader: &mut BufReader<R>, read: &mut dyn FnMut(&str) -> ()) {
@@ -82,18 +109,6 @@ pub fn read_lines<R: Read>(reader: &mut BufReader<R>, read: &mut dyn FnMut(&str)
         read(&buffer);
         buffer.clear();
     }
-}
-
-pub fn filter_lines<R: Read, W: Write>(
-    reader: &mut BufReader<R>,
-    writer: &mut BufWriter<W>,
-    allow_line: &mut dyn FnMut(&str) -> bool,
-) {
-    read_lines(reader, &mut |line: &str| {
-        if allow_line(line) {
-            writer.write(line.as_bytes()).unwrap();
-        };
-    });
 }
 
 pub fn load_graph<R: Read>(reader: &mut BufReader<R>) -> KytheGraph<Ticket> {
@@ -130,3 +145,9 @@ pub fn load_graph<R: Read>(reader: &mut BufReader<R>) -> KytheGraph<Ticket> {
 
     return graph;
 }
+
+// pub static KE_REF_CALL: &str = "/kythe/edge/ref/call";
+// pub static KE_DEFINES: &str = "/kythe/edge/defines";
+// pub static KE_DEFINES_BINDING: &str = "/kythe/edge/defines/binding";
+// pub static KE_DEFINES_IMPLICIT: &str = "/kythe/edge/defines/implicit";
+// pub static KN_KIND: &str = "/kythe/node/kind";
