@@ -40,6 +40,7 @@ pub struct CliExcludeCommand {
         display_order = 3
     )]
     if_nilpathed: bool,
+
     /// Exclude an edge if either the source OR the target lack a "path" property.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
@@ -48,6 +49,7 @@ pub struct CliExcludeCommand {
         display_order = 4
     )]
     if_any_nilpathed: bool,
+
     /// Exclude an edge if both the source AND the target lack a "path" property.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
@@ -56,6 +58,7 @@ pub struct CliExcludeCommand {
         display_order = 5
     )]
     if_all_nilpathed: bool,
+
     /// Exclude an edge if the source lacks a "path" property.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
@@ -64,6 +67,7 @@ pub struct CliExcludeCommand {
         display_order = 6
     )]
     if_src_nilpathed: bool,
+
     /// Exclude an edge if the target lacks a "path" property.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
@@ -82,6 +86,7 @@ pub struct CliExcludeCommand {
         display_order = 8
     )]
     if_abspathed: bool,
+
     /// Exclude an edge if either the source OR the target use an absolute path.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
@@ -90,6 +95,7 @@ pub struct CliExcludeCommand {
         display_order = 9
     )]
     if_any_abspathed: bool,
+
     /// Exclude an edge if both the source AND the target use an absolute path.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
@@ -98,6 +104,7 @@ pub struct CliExcludeCommand {
         display_order = 10
     )]
     if_all_abspathed: bool,
+
     /// Exclude an edge if the source uses an absolute path.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
@@ -106,6 +113,7 @@ pub struct CliExcludeCommand {
         display_order = 11
     )]
     if_src_abspathed: bool,
+
     /// Exclude an edge if the target uses an absolute path.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
@@ -124,6 +132,7 @@ pub struct CliExcludeCommand {
         display_order = 13
     )]
     if_relpathed: bool,
+
     /// Exclude an edge if either the source OR the target use a relative path.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
@@ -132,6 +141,7 @@ pub struct CliExcludeCommand {
         display_order = 14
     )]
     if_any_relpathed: bool,
+
     /// Exclude an edge if both the source AND the target use a relative path.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
@@ -140,6 +150,7 @@ pub struct CliExcludeCommand {
         display_order = 15
     )]
     if_all_relpathed: bool,
+
     /// Exclude an edge if the source uses a relative path.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
@@ -148,6 +159,7 @@ pub struct CliExcludeCommand {
         display_order = 16
     )]
     if_src_relpathed: bool,
+
     /// Exclude an edge if the target uses a relative path.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
@@ -167,6 +179,7 @@ pub struct CliExcludeCommand {
         display_order = 18
     )]
     by_path: Option<String>,
+
     /// Exclude an edge if either the source OR the target path matches a given glob pattern.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
@@ -176,6 +189,7 @@ pub struct CliExcludeCommand {
         display_order = 19
     )]
     by_any_path: Option<String>,
+
     /// Exclude an edge if both the source AND the target path matches a given glob pattern.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
@@ -185,6 +199,7 @@ pub struct CliExcludeCommand {
         display_order = 20
     )]
     by_all_path: Option<String>,
+
     /// Exclude an edge if the source path matches a given glob pattern.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
@@ -194,6 +209,7 @@ pub struct CliExcludeCommand {
         display_order = 21
     )]
     by_src_path: Option<String>,
+
     /// Exclude an edge if the target path matches a given glob pattern.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
@@ -214,6 +230,7 @@ pub struct CliExcludeCommand {
         display_order = 23
     )]
     by_factname: Option<String>,
+
     /// Exclude an edge if the fact name matches a given glob pattern.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
@@ -223,6 +240,7 @@ pub struct CliExcludeCommand {
         display_order = 24
     )]
     by_edge_factname: Option<String>,
+
     /// Exclude a node if the fact name matches a given glob pattern.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
@@ -332,7 +350,7 @@ impl CliCommand for CliExcludeCommand {
         let mut num_excluded = 0u128;
         'outer: while io::BufRead::read_line(&mut input, &mut buf).unwrap() != 0 {
             num_lines = num_lines + 1;
-            let entry: kythe::Entry = serde_json::from_str(&buf).unwrap();
+            let entry = kythe::Entry::from_json(&buf).unwrap();
 
             for rule in &rules {
                 if rule.is_excluded(&entry) {
@@ -437,11 +455,7 @@ struct TickedBasedExclusion {
 }
 
 impl TickedBasedExclusion {
-    fn new(
-        kind: EdgeExclusionKind,
-        ticket_rule: Box<dyn TicketExclusion>,
-        keep_nodes: bool,
-    ) -> Self {
+    fn new(kind: EdgeExclusionKind,ticket_rule: Box<dyn TicketExclusion>, keep_nodes: bool,) -> Self {
         Self {
             kind,
             ticket_rule,

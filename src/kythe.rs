@@ -1,69 +1,8 @@
-use crate::data_structures::{FactBook, KindedEdgeSet, NodeHolder, NodeId};
+use crate::collections::{FactBook, KindedEdgeBag, NodeId, NodeKeeper};
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::io::BufRead;
-use std::{
-    hash::Hash,
-    io::{BufReader, Read},
-};
-
-#[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq)]
-pub struct TicketId(NodeId);
-
-impl From<TicketId> for NodeId {
-    fn from(id: TicketId) -> Self {
-        id.0
-    }
-}
-
-impl From<TicketId> for usize {
-    fn from(id: TicketId) -> Self {
-        Self::from(id.0)
-    }
-}
-
-impl From<TicketId> for String {
-    fn from(id: TicketId) -> Self {
-        Self::from(id.0)
-    }
-}
-
-pub struct KytheGraph<TTicket: Eq + Hash> {
-    pub nodes: NodeHolder<TTicket>,
-    pub edges: KindedEdgeSet<TicketId>,
-    pub facts: FactBook<TicketId>,
-}
-
-impl<TTicket: Eq + Hash> KytheGraph<TTicket> {
-    pub fn new() -> Self {
-        Self {
-            nodes: NodeHolder::new(),
-            edges: KindedEdgeSet::new(),
-            facts: FactBook::new(),
-        }
-    }
-
-    pub fn add_ticket(&mut self, ticket: TTicket) -> TicketId {
-        TicketId(self.nodes.add(ticket))
-    }
-
-    pub fn add_edge(&mut self, edge_kind: String, src: TicketId, tgt: TicketId) {
-        self.edges.add(edge_kind, src, tgt);
-    }
-
-    pub fn add_fact(&mut self, id: TicketId, name: String, value: String) {
-        self.facts.add(id, name, value);
-    }
-
-    pub fn get_ticket(&self, id: &TicketId) -> Option<&TTicket> {
-        self.nodes.get(&id.0)
-    }
-
-    #[allow(dead_code)]
-    pub fn get_fact(&self, id: &TicketId, name: &str) -> Option<&str> {
-        self.facts.get(id, name)
-    }
-}
+use std::hash::Hash;
+use std::io::{self, BufRead};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
 pub struct Ticket {
@@ -82,7 +21,7 @@ pub enum Entry {
         src: Ticket,
         #[serde(rename = "target")]
         tgt: Ticket,
-        edge_kind: Option<String>,
+        edge_kind: String,
         fact_name: String,
         fact_value: Option<String>,
     },
@@ -94,50 +33,83 @@ pub enum Entry {
     },
 }
 
-pub fn read_lines<R: Read>(reader: &mut BufReader<R>, read: &mut dyn FnMut(&str) -> ()) {
-    let mut buffer = String::new();
+impl Entry {
+    pub fn from_json(json: &String) -> Option<Self> {
+        serde_json::from_str(json).ok()
+    }
+}
 
-    while let Ok(n_bytes_read) = reader.read_line(&mut buffer) {
+pub struct KytheGraph {
+    pub nodes: NodeKeeper<Ticket>,
+    pub edges: KindedEdgeBag<String, NodeId>,
+    pub facts: FactBook<NodeId>,
+}
+
+impl KytheGraph {
+    pub fn new() -> Self {
+        Self {
+            nodes: NodeKeeper::new(),
+            edges: KindedEdgeBag::new(),
+            facts: FactBook::new(),
+        }
+    }
+
+    pub fn insert_node(&mut self, ticket: Ticket) -> NodeId {
+        self.nodes.insert(ticket)
+    }
+
+    pub fn insert_edge(&mut self, edge_kind: String, src: NodeId, tgt: NodeId) {
+        self.edges.insert(edge_kind, src, tgt);
+    }
+
+    pub fn insert_fact(&mut self, id: NodeId, name: String, value: String) {
+        self.facts.insert(id, name, value);
+    }
+
+    pub fn get_node(&self, id: &NodeId) -> Option<&Ticket> {
+        self.nodes.get(id)
+    }
+
+    #[allow(dead_code)]
+    pub fn get_fact(&self, id: &NodeId, name: &str) -> Option<&String> {
+        self.facts.get(id, name)
+    }
+}
+
+pub fn load_graph(reader: &mut io::BufReader<Box<dyn io::Read>>) -> KytheGraph {
+    let mut buf = String::new();
+    let mut graph = KytheGraph::new();
+
+    while let Ok(n_bytes_read) = reader.read_line(&mut buf) {
         if n_bytes_read == 0 {
             break;
         };
 
-        read(&buffer);
-        buffer.clear();
-    }
-}
+        let entry = Entry::from_json(&buf).unwrap();
 
-pub fn load_graph<R: Read>(reader: &mut BufReader<R>) -> KytheGraph<Ticket> {
-    let mut graph = KytheGraph::new();
-
-    #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
-    struct EntryDto {
-        #[serde(rename = "source")]
-        src: Ticket,
-        #[serde(rename = "target")]
-        tgt: Option<Ticket>,
-        edge_kind: Option<String>,
-        fact_name: String,
-        fact_value: Option<String>,
-    }
-
-    read_lines(reader, &mut |line: &str| {
-        let entry: EntryDto = serde_json::from_str(line).unwrap();
-        let src_id = graph.add_ticket(entry.src);
-
-        match entry.tgt {
-            Some(tgt) => {
-                let tgt_id = graph.add_ticket(tgt);
-                let edge_kind = entry.edge_kind.unwrap();
-                graph.add_edge(edge_kind, src_id, tgt_id);
+        match entry {
+            Entry::Edge {
+                src,
+                tgt,
+                edge_kind,
+                ..
+            } => {
+                let src_id = graph.insert_node(src);
+                let tgt_id = graph.insert_node(tgt);
+                graph.insert_edge(edge_kind, src_id, tgt_id);
             }
-            None => {
-                let fact_name = entry.fact_name;
-                let fact_value = entry.fact_value.unwrap_or_default();
-                graph.add_fact(src_id, fact_name, fact_value);
+            Entry::Node {
+                src,
+                fact_name,
+                fact_value,
+            } => {
+                let src_id = graph.insert_node(src);
+                graph.insert_fact(src_id, fact_name, fact_value.unwrap_or_default());
             }
         }
-    });
+
+        buf.clear();
+    }
 
     return graph;
 }

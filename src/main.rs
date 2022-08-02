@@ -1,5 +1,5 @@
 mod commands;
-mod data_structures;
+mod collections;
 mod kythe;
 mod util;
 

@@ -43,18 +43,18 @@ impl CliCommand for CliDisplayCommand {
             let mut writer = DotWriter::from(&mut output_bytes);
             let mut digraph = writer.digraph();
 
-            for (kind, src, tgt) in graph.edges.iter() {
-                let src_name = String::from(src);
-                let tgt_name = String::from(tgt);
+            for (kind, src, tgt, count) in graph.edges.iter() {
+                let src_name = String::from(*src);
+                let tgt_name = String::from(*tgt);
 
-                let src_ticket = graph.get_ticket(&src).unwrap();
-                let tgt_ticket = graph.get_ticket(&tgt).unwrap();
+                let src_ticket = graph.get_node(&src).unwrap();
+                let tgt_ticket = graph.get_node(&tgt).unwrap();
 
                 let src_path = src_ticket.path.as_ref().unwrap();
                 let tgt_path = tgt_ticket.path.as_ref().unwrap();
 
-                let src_label = format!("{} ({})", String::from(src), src_path);
-                let tgt_label = format!("{} ({})", String::from(tgt), tgt_path);
+                let src_label = format!("{} ({})", src_name, src_path);
+                let tgt_label = format!("{} ({})", tgt_name, tgt_path);
 
                 {
                     let mut src_node = digraph.node_named(&src_name);
@@ -66,8 +66,8 @@ impl CliCommand for CliDisplayCommand {
                     tgt_node.set_label(&tgt_label);
                 }
 
-                let edge_label = kind.strip_prefix("/kythe/edge/").unwrap();
-                digraph.edge(&src_name, &tgt_name).attributes().set_label(edge_label);
+                let edge_label = format!("{} ({})", kind.strip_prefix("/kythe/edge/").unwrap(), count);
+                digraph.edge(&src_name, &tgt_name).attributes().set_label(&edge_label);
             }
         }
 
