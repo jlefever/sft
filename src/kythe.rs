@@ -76,7 +76,7 @@ impl KytheGraph {
     }
 }
 
-pub fn load_graph(reader: &mut io::BufReader<Box<dyn io::Read>>) -> KytheGraph {
+pub fn load_kythe_graph(reader: &mut io::BufReader<Box<dyn io::Read>>) -> KytheGraph {
     let mut buf = String::new();
     let mut graph = KytheGraph::new();
 

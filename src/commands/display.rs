@@ -35,7 +35,7 @@ impl CliCommand for CliDisplayCommand {
         let mut output = util::create_output(self.output.as_ref()).unwrap();
 
         let start = Instant::now();
-        let graph = kythe::load_graph(&mut input);
+        let graph = kythe::load_kythe_graph(&mut input);
         log::debug!("Loaded graph in {} secs.", start.elapsed().as_secs_f32());
 
         let mut output_bytes: Vec<u8> = Vec::new();

@@ -1,7 +1,7 @@
 use bimap::BiHashMap;
 use std::{collections::HashMap, hash::Hash};
 
-#[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Ord, Eq, Hash, PartialEq, PartialOrd)]
 pub struct NodeId(usize);
 
 impl From<NodeId> for usize {
@@ -17,7 +17,7 @@ impl From<NodeId> for String {
 }
 
 pub struct NodeKeeper<N> {
-    nodes: BiHashMap<N, NodeId>,
+    nodes: BiHashMap<NodeId, N>,
 }
 
 impl<N: Eq + Hash> NodeKeeper<N> {
@@ -28,17 +28,39 @@ impl<N: Eq + Hash> NodeKeeper<N> {
     }
 
     pub fn insert(&mut self, node: N) -> NodeId {
-        if let Some(node_id) = self.nodes.get_by_left(&node) {
+        if let Some(node_id) = self.nodes.get_by_right(&node) {
             *node_id
         } else {
             let node_id = NodeId(self.nodes.len());
-            self.nodes.insert(node, node_id);
+            self.nodes.insert(node_id, node);
             node_id
         }
     }
 
     pub fn get(&self, id: &NodeId) -> Option<&N> {
-        self.nodes.get_by_right(id)
+        self.nodes.get_by_left(id)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&NodeId, &N)> {
+        self.nodes.iter()
+    }
+}
+
+impl<'a, N: Eq + Hash> IntoIterator for &'a NodeKeeper<N> {
+    type Item = (&'a NodeId, &'a N);
+    type IntoIter = bimap::hash::Iter<'a, NodeId, N>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.nodes.iter()
+    }
+}
+
+impl<N: Eq + Hash> IntoIterator for NodeKeeper<N> {
+    type Item = (NodeId, N);
+    type IntoIter = bimap::hash::IntoIter<NodeId, N>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.nodes.into_iter()
     }
 }
 
@@ -123,3 +145,20 @@ impl<N: Eq + Hash> FactBook<N> {
 // Client can use it for count, (kind, count), etc.
 // EdgeFreq is a type of EdgeData
 // EdgeFreqByKind is another type of EdgeData
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+
+    #[test]
+    fn test() {
+        let mut bag: EdgeBag<usize> = EdgeBag::new();
+
+        bag.insert(3, 4);
+
+        let set: HashSet<(&usize, &usize, &usize)> = bag.iter().collect();
+        assert!(set.contains(&(&3, &4, &1)));
+    }
+}

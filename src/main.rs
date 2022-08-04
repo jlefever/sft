@@ -1,6 +1,8 @@
+#![feature(type_alias_impl_trait)]
 mod commands;
 mod collections;
 mod kythe;
+mod dv8;
 mod util;
 
 use clap::{Parser, Subcommand};
@@ -25,6 +27,7 @@ struct Cli {
 enum CliSubCommand {
     Display(commands::display::CliDisplayCommand),
     Exclude(commands::exclude::CliExcludeCommand),
+    Dsm(commands::dsm::CliDsmCommand),
 }
 
 fn main() {
@@ -48,6 +51,7 @@ fn main() {
         Some(command) => match command {
             CliSubCommand::Exclude(com) => com.execute(),
             CliSubCommand::Display(com) => com.execute(),
+            CliSubCommand::Dsm(com) => com.execute(),
         },
     }
 }
