@@ -2,9 +2,12 @@ use crate::kythe;
 use crate::util;
 
 use log;
+use std::collections::HashSet;
 use std::fmt::Debug;
+use std::fs;
 use std::io;
 
+use std::io::Read;
 use std::path::Path;
 use std::{path::PathBuf, time::Instant};
 
@@ -12,16 +15,20 @@ use super::CliCommand;
 
 /// Exclude entries that meet the supplied conditions.
 ///
-/// Reads a stream of newline-delimited entries in and writes each entry back out unless it
-/// meets one of the supplied conditions to be excluded. Each entry is either a node or an
-/// edge. Most of these options only concern edges, but some nodes may also be excluded if they
-/// cannot possibly be involved in any of the remaining edges. Use --keep-nodes to disable this
-/// behavior.
+/// Reads a stream of newline-delimited entries in and writes each entry back
+/// out unless it meets one of the supplied conditions to be excluded. Each
+/// entry is either a node or an edge. Most of these options only concern edges,
+/// but some nodes may also be excluded if they cannot possibly be involved in
+/// any of the remaining edges. Use --keep-nodes to disable this behavior.
+///
+/// Some options ask for a "pathlist". A pathlist is a text file containing a
+/// newline-delimited list of paths.
 ///
 /// For more info on Kythe's entry format, see https://kythe.io/docs/kythe-storage.html.
 ///
-/// On Windows, it is recommended to use --input/--output rather than stdin/stdout for both
-/// performance reasons and compatibility reasons (Windows console does not support UTF-8).
+/// On Windows, it is recommended to use --input/--output rather than
+/// stdin/stdout for both performance reasons and compatibility reasons (Windows
+/// console does not support UTF-8).
 #[derive(clap::Args)]
 pub struct CliExcludeCommand {
     /// Path of the file to read entries from. If ommitted, read from stdin.
@@ -41,7 +48,8 @@ pub struct CliExcludeCommand {
     )]
     if_nilpathed: bool,
 
-    /// Exclude an edge if either the source OR the target lack a "path" property.
+    /// Exclude an edge if either the source OR the target lack a "path"
+    /// property.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
         group = "nilpath",
@@ -50,7 +58,8 @@ pub struct CliExcludeCommand {
     )]
     if_any_nilpathed: bool,
 
-    /// Exclude an edge if both the source AND the target lack a "path" property.
+    /// Exclude an edge if both the source AND the target lack a "path"
+    /// property.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
         group = "nilpath",
@@ -169,7 +178,8 @@ pub struct CliExcludeCommand {
     )]
     if_tgt_relpathed: bool,
 
-    /// Alias for --by-any-path.
+    /// Only include an edge if both the source AND the target path matches a
+    /// given glob pattern.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
         group = "path",
@@ -180,89 +190,149 @@ pub struct CliExcludeCommand {
     )]
     by_path: Option<String>,
 
-    /// Exclude an edge if either the source OR the target path matches a given glob pattern.
-    #[clap(
-        help_heading = "EXCLUDE OPTIONS",
-        group = "path",
-        value_name = "GLOB_PATTERN",
-        long,
-        display_order = 19
-    )]
-    by_any_path: Option<String>,
+    // /// Only include an edge if either the source OR the target path matches a
+    // /// given glob pattern.
+    // #[clap(
+    //     help_heading = "EXCLUDE OPTIONS",
+    //     group = "path",
+    //     value_name = "GLOB_PATTERN",
+    //     long,
+    //     display_order = 19
+    // )]
+    // by_any_path: Option<String>,
 
-    /// Exclude an edge if both the source AND the target path matches a given glob pattern.
-    #[clap(
-        help_heading = "EXCLUDE OPTIONS",
-        group = "path",
-        value_name = "GLOB_PATTERN",
-        long,
-        display_order = 20
-    )]
-    by_all_path: Option<String>,
+    // /// Only include an edge if both the source AND the target path matches a
+    // /// given glob pattern.
+    // #[clap(
+    //     help_heading = "EXCLUDE OPTIONS",
+    //     group = "path",
+    //     value_name = "GLOB_PATTERN",
+    //     long,
+    //     display_order = 20
+    // )]
+    // by_all_path: Option<String>,
 
-    /// Exclude an edge if the source path matches a given glob pattern.
-    #[clap(
-        help_heading = "EXCLUDE OPTIONS",
-        group = "path",
-        value_name = "GLOB_PATTERN",
-        long,
-        display_order = 21
-    )]
-    by_src_path: Option<String>,
+    // /// Only include an edge if the source path matches a given glob pattern.
+    // #[clap(
+    //     help_heading = "EXCLUDE OPTIONS",
+    //     group = "path",
+    //     value_name = "GLOB_PATTERN",
+    //     long,
+    //     display_order = 21
+    // )]
+    // by_src_path: Option<String>,
 
-    /// Exclude an edge if the target path matches a given glob pattern.
-    #[clap(
-        help_heading = "EXCLUDE OPTIONS",
-        group = "path",
-        value_name = "GLOB_PATTERN",
-        long,
-        display_order = 22
-    )]
-    by_tgt_path: Option<String>,
+    // /// Only include an edge if the target path matches a given glob pattern.
+    // #[clap(
+    //     help_heading = "EXCLUDE OPTIONS",
+    //     group = "path",
+    //     value_name = "GLOB_PATTERN",
+    //     long,
+    //     display_order = 22
+    // )]
+    // by_tgt_path: Option<String>,
 
-    /// Exclude an entry (node or edge) if the fact name matches a given glob pattern.
+    /// Only include an edge if both the source AND the target path is found
+    /// verbatim in the provided pathlist.
     #[clap(
         help_heading = "EXCLUDE OPTIONS",
-        group = "factname",
-        value_name = "GLOB_PATTERN",
-        short = 'f',
+        group = "pathlist",
+        value_name = "PATHLIST_PATH",
+        short = 'l',
         long,
         display_order = 23
     )]
-    by_factname: Option<String>,
+    by_pathlist: Option<String>,
 
-    /// Exclude an edge if the fact name matches a given glob pattern.
-    #[clap(
-        help_heading = "EXCLUDE OPTIONS",
-        group = "factname",
-        value_name = "GLOB_PATTERN",
-        long,
-        display_order = 24
-    )]
-    by_edge_factname: Option<String>,
+    // /// Only include an edge if either the source OR the target path is found
+    // /// verbatim in the provided pathlist.
+    // #[clap(
+    //     help_heading = "EXCLUDE OPTIONS",
+    //     group = "pathlist",
+    //     value_name = "PATHLIST_PATH",
+    //     long,
+    //     display_order = 24
+    // )]
+    // by_any_pathlist: Option<String>,
 
-    /// Exclude a node if the fact name matches a given glob pattern.
-    #[clap(
-        help_heading = "EXCLUDE OPTIONS",
-        group = "factname",
-        value_name = "GLOB_PATTERN",
-        long,
-        display_order = 25
-    )]
-    by_node_factname: Option<String>,
+    // /// Only include an edge if both the source AND the target path is found
+    // /// verbatim in the provided pathlist.
+    // #[clap(
+    //     help_heading = "EXCLUDE OPTIONS",
+    //     group = "pathlist",
+    //     value_name = "PATHLIST_PATH",
+    //     long,
+    //     display_order = 25
+    // )]
+    // by_all_pathlist: Option<String>,
 
-    /// Exclude an edge if the edge kind matches a given glob pattern.
-    #[clap(
-        help_heading = "EXCLUDE OPTIONS",
-        value_name = "GLOB_PATTERN",
-        short = 'e',
-        long,
-        display_order = 26
-    )]
-    by_edgekind: Option<String>,
+    // /// Only include an edge if the source path is found verbatim in the
+    // /// provided pathlist.
+    // #[clap(
+    //     help_heading = "EXCLUDE OPTIONS",
+    //     group = "pathlist",
+    //     value_name = "PATHLIST_PATH",
+    //     long,
+    //     display_order = 26
+    // )]
+    // by_src_pathlist: Option<String>,
 
-    /// Do not remove any nodes unless explicitly requested (e.g. with --by-node-factname).
-    #[clap(help_heading = "MISC", short = 'k', long, display_order = 27)]
+    // /// Only include an edge if the target path is found verbatim in the
+    // /// provided pathlist.
+    // #[clap(
+    //     help_heading = "EXCLUDE OPTIONS",
+    //     group = "pathlist",
+    //     value_name = "PATHLIST_PATH",
+    //     long,
+    //     display_order = 27
+    // )]
+    // by_tgt_pathlist: Option<String>,
+
+    // /// Exclude an entry (node or edge) if the fact name matches a given glob
+    // /// pattern. (TODO)
+    // #[clap(
+    //     help_heading = "EXCLUDE OPTIONS",
+    //     group = "factname",
+    //     value_name = "GLOB_PATTERN",
+    //     short = 'f',
+    //     long,
+    //     display_order = 28
+    // )]
+    // by_factname: Option<String>,
+
+    // /// Exclude an edge if the fact name matches a given glob pattern. (TODO)
+    // #[clap(
+    //     help_heading = "EXCLUDE OPTIONS",
+    //     group = "factname",
+    //     value_name = "GLOB_PATTERN",
+    //     long,
+    //     display_order = 29
+    // )]
+    // by_edge_factname: Option<String>,
+
+    // /// Exclude a node if the fact name matches a given glob pattern. (TODO)
+    // #[clap(
+    //     help_heading = "EXCLUDE OPTIONS",
+    //     group = "factname",
+    //     value_name = "GLOB_PATTERN",
+    //     long,
+    //     display_order = 30
+    // )]
+    // by_node_factname: Option<String>,
+
+    // /// Exclude an edge if the edge kind matches a given glob pattern. (TODO)
+    // #[clap(
+    //     help_heading = "EXCLUDE OPTIONS",
+    //     value_name = "GLOB_PATTERN",
+    //     short = 'e',
+    //     long,
+    //     display_order = 31
+    // )]
+    // by_edgekind: Option<String>,
+
+    /// Do not remove any nodes unless explicitly requested (e.g. with
+    /// --by-node-factname).
+    #[clap(help_heading = "MISC", short = 'k', long, display_order = 33)]
     keep_nodes: bool,
 }
 
@@ -310,28 +380,26 @@ impl CliCommand for CliExcludeCommand {
 
         push_path_kind_exclusion(relpath_kind, PathKind::RelPathed);
 
-        let pathmatch_kind = EdgeExclusionKind::from_bools(
-            self.by_any_path.is_some() || self.by_path.is_some(),
-            self.by_all_path.is_some(),
-            self.by_src_path.is_some(),
-            self.by_tgt_path.is_some(),
-        );
-
-        let pathmatch_pattern = util::collapse(vec![
-            self.by_path.as_ref(),
-            self.by_any_path.as_ref(),
-            self.by_all_path.as_ref(),
-            self.by_src_path.as_ref(),
-            self.by_tgt_path.as_ref(),
-        ]);
-
-        if let Some(exclusion_kind) = pathmatch_kind {
-            let matcher = globset::Glob::new(pathmatch_pattern.unwrap())
+        if let Some(pattern) = &self.by_path {
+            let matcher = globset::Glob::new(pattern)
                 .unwrap()
                 .compile_matcher();
             let ticket_rule = Box::new(PathPatternBasedExclusion::new(matcher));
-            let rule = TickedBasedExclusion::new(exclusion_kind, ticket_rule, self.keep_nodes);
+            let rule = TickedBasedExclusion::new(EdgeExclusionKind::Any, ticket_rule, self.keep_nodes);
             rules.push(Box::new(rule));
+        }
+
+        if let Some(pathlist) = &self.by_pathlist {
+            log::debug!("Loading pathlist {}...", pathlist);
+            match fs::read_to_string(pathlist) {
+                Err(_) => log::error!("Failed to read pathlist {}", pathlist),
+                Ok(text) => {
+                    let rule = PathListBasedExclusion::new(text.lines().map(String::from));
+                    let rule = Box::new(rule);
+                    let rule = TickedBasedExclusion::new(EdgeExclusionKind::Any, rule, self.keep_nodes);
+                    rules.push(Box::new(rule));
+                }
+            }
         }
 
         log::debug!(
@@ -455,7 +523,11 @@ struct TickedBasedExclusion {
 }
 
 impl TickedBasedExclusion {
-    fn new(kind: EdgeExclusionKind,ticket_rule: Box<dyn TicketExclusion>, keep_nodes: bool,) -> Self {
+    fn new(
+        kind: EdgeExclusionKind,
+        ticket_rule: Box<dyn TicketExclusion>,
+        keep_nodes: bool,
+    ) -> Self {
         Self {
             kind,
             ticket_rule,
@@ -539,6 +611,35 @@ impl TicketExclusion for PathPatternBasedExclusion {
         match &ticket.path {
             None => false,
             Some(path) => !self.matcher.is_match(Path::new(path)),
+        }
+    }
+}
+
+struct PathListBasedExclusion {
+    paths: HashSet<String>,
+}
+
+impl Debug for PathListBasedExclusion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PathListBasedExclusion")
+            .field("paths", &self.paths.len())
+            .finish()
+    }
+}
+
+impl PathListBasedExclusion {
+    fn new(paths: impl Iterator<Item = String>) -> Self {
+        Self {
+            paths: paths.collect(),
+        }
+    }
+}
+
+impl TicketExclusion for PathListBasedExclusion {
+    fn is_excluded(&self, ticket: &kythe::Ticket) -> bool {
+        match &ticket.path {
+            None => false,
+            Some(path) => !self.paths.contains(path),
         }
     }
 }
