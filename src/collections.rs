@@ -37,8 +37,12 @@ impl<N: Eq + Hash> NodeKeeper<N> {
         }
     }
 
-    pub fn get(&self, id: &NodeId) -> Option<&N> {
+    pub fn get_node(&self, id: &NodeId) -> Option<&N> {
         self.nodes.get_by_left(id)
+    }
+
+    pub fn get_id(&self, node: &N) -> Option<&NodeId> {
+        self.nodes.get_by_right(node)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&NodeId, &N)> {

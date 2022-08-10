@@ -1,13 +1,13 @@
-use crate::kythe;
-use crate::util;
+use crate::io::Entry;
+use crate::io::EntryLineReader;
+use crate::io::Ticket;
+use crate::io::Writer;
 
 use log;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::fs;
-use std::io;
 
-use std::io::Read;
 use std::path::Path;
 use std::{path::PathBuf, time::Instant};
 
@@ -231,7 +231,6 @@ pub struct CliExcludeCommand {
     //     display_order = 22
     // )]
     // by_tgt_path: Option<String>,
-
     /// Only include an edge if both the source AND the target path is found
     /// verbatim in the provided pathlist.
     #[clap(
@@ -329,7 +328,6 @@ pub struct CliExcludeCommand {
     //     display_order = 31
     // )]
     // by_edgekind: Option<String>,
-
     /// Do not remove any nodes unless explicitly requested (e.g. with
     /// --by-node-factname).
     #[clap(help_heading = "MISC", short = 'k', long, display_order = 33)]
@@ -338,8 +336,9 @@ pub struct CliExcludeCommand {
 
 impl CliCommand for CliExcludeCommand {
     fn execute(&self) {
-        let mut input = util::create_input(self.input.as_ref()).unwrap();
-        let mut output = util::create_output(self.output.as_ref()).unwrap();
+        let input = self.input.as_ref().map(PathBuf::as_path);
+        let output = self.output.as_ref().map(PathBuf::as_path);
+        let mut writer = Writer::open(output).unwrap();
 
         let mut rules: Vec<Box<dyn Exclusion>> = Vec::new();
 
@@ -381,11 +380,10 @@ impl CliCommand for CliExcludeCommand {
         push_path_kind_exclusion(relpath_kind, PathKind::RelPathed);
 
         if let Some(pattern) = &self.by_path {
-            let matcher = globset::Glob::new(pattern)
-                .unwrap()
-                .compile_matcher();
+            let matcher = globset::Glob::new(pattern).unwrap().compile_matcher();
             let ticket_rule = Box::new(PathPatternBasedExclusion::new(matcher));
-            let rule = TickedBasedExclusion::new(EdgeExclusionKind::Any, ticket_rule, self.keep_nodes);
+            let rule =
+                TickedBasedExclusion::new(EdgeExclusionKind::Any, ticket_rule, self.keep_nodes);
             rules.push(Box::new(rule));
         }
 
@@ -396,7 +394,8 @@ impl CliCommand for CliExcludeCommand {
                 Ok(text) => {
                     let rule = PathListBasedExclusion::new(text.lines().map(String::from));
                     let rule = Box::new(rule);
-                    let rule = TickedBasedExclusion::new(EdgeExclusionKind::Any, rule, self.keep_nodes);
+                    let rule =
+                        TickedBasedExclusion::new(EdgeExclusionKind::Any, rule, self.keep_nodes);
                     rules.push(Box::new(rule));
                 }
             }
@@ -412,24 +411,20 @@ impl CliCommand for CliExcludeCommand {
         log::info!("Starting exclusion process...");
 
         let start = Instant::now();
-
-        let mut buf = String::new();
         let mut num_lines = 0u128;
         let mut num_excluded = 0u128;
-        'outer: while io::BufRead::read_line(&mut input, &mut buf).unwrap() != 0 {
+
+        'outer: for (line, entry) in EntryLineReader::open(input).unwrap() {
             num_lines = num_lines + 1;
-            let entry = kythe::Entry::from_json(&buf).unwrap();
 
             for rule in &rules {
                 if rule.is_excluded(&entry) {
                     num_excluded += 1;
-                    buf.clear();
                     continue 'outer;
                 }
             }
 
-            io::Write::write(&mut output, buf.as_bytes()).unwrap();
-            buf.clear();
+            writer.write(line.as_bytes()).unwrap();
         }
 
         log::info!(
@@ -463,7 +458,7 @@ impl EdgeExclusionKind {
 }
 
 trait Exclusion: Debug {
-    fn is_excluded(&self, entry: &kythe::Entry) -> bool;
+    fn is_excluded(&self, entry: &Entry) -> bool;
 }
 
 #[allow(dead_code)]
@@ -501,13 +496,13 @@ impl FactBasedExclusion {
 }
 
 impl Exclusion for FactBasedExclusion {
-    fn is_excluded(&self, entry: &kythe::Entry) -> bool {
+    fn is_excluded(&self, entry: &Entry) -> bool {
         match entry {
-            kythe::Entry::Edge { fact_name, .. } => match self.kind {
+            Entry::Edge { fact_name, .. } => match self.kind {
                 FactExclusionKind::Node => false,
                 _ => self.matcher.is_match(fact_name),
             },
-            kythe::Entry::Node { fact_name, .. } => match self.kind {
+            Entry::Node { fact_name, .. } => match self.kind {
                 FactExclusionKind::Edge => false,
                 _ => self.matcher.is_match(fact_name),
             },
@@ -537,17 +532,17 @@ impl TickedBasedExclusion {
 }
 
 impl Exclusion for TickedBasedExclusion {
-    fn is_excluded(&self, entry: &kythe::Entry) -> bool {
-        let is_excluded = |t: &kythe::Ticket| self.ticket_rule.is_excluded(t);
+    fn is_excluded(&self, entry: &Entry) -> bool {
+        let is_excluded = |t: &Ticket| self.ticket_rule.is_excluded(t);
 
         match entry {
-            kythe::Entry::Edge { src, tgt, .. } => match self.kind {
+            Entry::Edge { src, tgt, .. } => match self.kind {
                 EdgeExclusionKind::Any => is_excluded(src) || is_excluded(tgt),
                 EdgeExclusionKind::All => is_excluded(src) && is_excluded(tgt),
                 EdgeExclusionKind::Src => is_excluded(src),
                 EdgeExclusionKind::Tgt => is_excluded(tgt),
             },
-            kythe::Entry::Node { src, .. } => match self.kind {
+            Entry::Node { src, .. } => match self.kind {
                 EdgeExclusionKind::Any => !self.keep_nodes && is_excluded(src),
                 _ => false,
             },
@@ -556,7 +551,7 @@ impl Exclusion for TickedBasedExclusion {
 }
 
 trait TicketExclusion: Debug {
-    fn is_excluded(&self, ticket: &kythe::Ticket) -> bool;
+    fn is_excluded(&self, ticket: &Ticket) -> bool;
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -590,7 +585,7 @@ impl PathKindBasedExclusion {
 }
 
 impl TicketExclusion for PathKindBasedExclusion {
-    fn is_excluded(&self, ticket: &kythe::Ticket) -> bool {
+    fn is_excluded(&self, ticket: &Ticket) -> bool {
         self.kind == PathKind::of(ticket.path.as_ref())
     }
 }
@@ -607,7 +602,7 @@ impl PathPatternBasedExclusion {
 }
 
 impl TicketExclusion for PathPatternBasedExclusion {
-    fn is_excluded(&self, ticket: &kythe::Ticket) -> bool {
+    fn is_excluded(&self, ticket: &Ticket) -> bool {
         match &ticket.path {
             None => false,
             Some(path) => !self.matcher.is_match(Path::new(path)),
@@ -636,7 +631,7 @@ impl PathListBasedExclusion {
 }
 
 impl TicketExclusion for PathListBasedExclusion {
-    fn is_excluded(&self, ticket: &kythe::Ticket) -> bool {
+    fn is_excluded(&self, ticket: &Ticket) -> bool {
         match &ticket.path {
             None => false,
             Some(path) => !self.paths.contains(path),

@@ -1,8 +1,9 @@
-use crate::dv8;
+use crate::dv8::Dv8Graph;
 use crate::dv8::Dv8Matrix;
-use crate::util;
+use crate::io::Writer;
 
 use std::io::Write;
+use std::path::Path;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -31,22 +32,26 @@ pub struct CliDsmCommand {
 
 impl CliCommand for CliDsmCommand {
     fn execute(&self) {
-        let mut input = util::create_input(self.input.as_ref()).unwrap();
-        let mut output = util::create_output(self.output.as_ref()).unwrap();
+        let input = self.input.as_ref().map(PathBuf::as_path);
+        let output = self.output.as_ref().map(PathBuf::as_path);
+        let mut writer = Writer::open(output).unwrap();
 
         let start = Instant::now();
-        let graph = dv8::load_dv8_graph(&mut input);
+        let graph = Dv8Graph::open(input).unwrap();
         log::debug!("Loaded graph in {} secs.", start.elapsed().as_secs_f32());
 
         let start = Instant::now();
         let mut matrix = Dv8Matrix::from(graph);
         matrix.set_name(self.name.clone());
-        log::debug!("Converted to DV8 matrix in {} secs.", start.elapsed().as_secs_f32());
+        log::debug!(
+            "Converted to DV8 matrix in {} secs.",
+            start.elapsed().as_secs_f32()
+        );
 
         let start = Instant::now();
         let serialized = serde_json::to_string_pretty(&matrix).unwrap();
         log::debug!("Serialized in {} secs.", start.elapsed().as_secs_f32());
 
-        output.write(serialized.as_bytes()).unwrap();
+        writer.write(serialized.as_bytes()).unwrap();
     }
 }

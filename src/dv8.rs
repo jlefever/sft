@@ -1,11 +1,8 @@
-use std::{
-    collections::HashMap,
-    io::{self, BufRead},
-};
+use std::{collections::HashMap, io, path::Path};
 
 use crate::{
     collections::{KindedEdgeBag, NodeId, NodeKeeper},
-    kythe,
+    io::{Entry, EntryReader},
 };
 
 pub struct Dv8Graph {
@@ -21,12 +18,37 @@ impl Dv8Graph {
         }
     }
 
+    pub fn open(path: Option<&Path>) -> io::Result<Self> {
+        Ok(Self::from(EntryReader::open(path)?))
+    }
+
     pub fn insert_var(&mut self, filename: String) -> NodeId {
         self.nodes.insert(filename)
     }
 
     pub fn insert_dep(&mut self, edge_kind: String, src: NodeId, tgt: NodeId) {
         self.edges.insert(edge_kind, src, tgt);
+    }
+}
+
+impl From<EntryReader> for Dv8Graph {
+    fn from(reader: EntryReader) -> Self {
+        let mut graph = Dv8Graph::new();
+
+        for entry in reader {
+            match entry {
+                Entry::Edge { src, tgt, edge_kind, .. } => {
+                    if let Some(src_path) = src.path && let Some(tgt_path) = tgt.path {
+                        let src_id = graph.insert_var(src_path);
+                        let tgt_id = graph.insert_var(tgt_path);
+                        graph.insert_dep(edge_kind, src_id, tgt_id);
+                    }
+                },
+                _ => ()
+            }
+        }
+
+        return graph;
     }
 }
 
@@ -116,9 +138,11 @@ fn to_dv8_edge_kind(edge_kind: &String) -> Option<&'static str> {
         "overrides" => Some("ImplLink"),
         "overrides/root" => Some("ImplLink"),
         "undefines" => Some("Use"),
+        "satisfies" => Some("Implement"),
+        "extends" => Some("Extend"),
         "childof" => Some("Contain"),
         "childof/context" => Some("Contain"),
-        "completedby" => Some("Contain"),
+        // "completedby" => Some("Contain"),
         _ => match edge_kind.starts_with("param.") {
             true => Some("Parameter"),
             false => None,
@@ -162,37 +186,6 @@ fn to_matrix(graph: Dv8Graph) -> Dv8Matrix {
     let indices = argsort(&vars);
     vars.sort();
     Dv8Matrix::new(vars, to_cells(graph.edges, indices))
-}
-
-pub fn load_dv8_graph(reader: &mut io::BufReader<Box<dyn io::Read>>) -> Dv8Graph {
-    let mut buf = String::new();
-    let mut graph = Dv8Graph::new();
-
-    while let Ok(n_bytes_read) = reader.read_line(&mut buf) {
-        if n_bytes_read == 0 {
-            break;
-        };
-
-        let entry = kythe::Entry::from_json(&buf).unwrap();
-
-        if let kythe::Entry::Edge {
-            src,
-            tgt,
-            edge_kind,
-            ..
-        } = entry
-        {
-            if let Some(src_path) = src.path && let Some(tgt_path) = tgt.path {
-                let src_id = graph.insert_var(src_path);
-                let tgt_id = graph.insert_var(tgt_path);
-                graph.insert_dep(edge_kind, src_id, tgt_id);
-            }
-        }
-
-        buf.clear();
-    }
-
-    return graph;
 }
 
 #[cfg(test)]

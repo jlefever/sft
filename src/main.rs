@@ -1,9 +1,9 @@
 #![feature(type_alias_impl_trait)]
-mod commands;
 mod collections;
-mod kythe;
+mod commands;
 mod dv8;
-mod util;
+mod io;
+mod kythe;
 
 use clap::{Parser, Subcommand};
 use commands::CliCommand;
