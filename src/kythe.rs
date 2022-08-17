@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::hash::Hash;
 use std::path::Path;
 
@@ -13,12 +14,14 @@ pub enum ParseErr {
     UnknownEdgeKind(String),
     UnknownFactName(String),
     UnknownFunctionKind(String),
-    UnknownRecordKind(String),
-    UnknownSumKind(String),
+    UnknownRecordKind(Lang, String),
+    UnknownSumKind(Lang, String),
     UnknownVariableKind(String),
     UnknownComplete(String),
     UnknownNodeKind(String),
+    UnknownLang(String),
     MissingFact(&'static str),
+    MissingLang,
     ExpectedInt,
     SequencingErr(NodeIndex, Box<ParseErr>),
 }
@@ -117,7 +120,7 @@ impl TryFrom<&str> for EdgeKind {
 }
 
 #[derive(Debug, Default)]
-pub struct RawNode {
+pub struct RawNodeValue {
     code: Option<String>,
     complete: Option<String>,
     loc_end: Option<String>,
@@ -141,7 +144,7 @@ const FACT_TAG_DEPRECATED: &'static str = "/kythe/tag/deprecated";
 const FACT_TAG_STATIC: &'static str = "/kythe/tag/static";
 const FACT_TEXT: &'static str = "/kythe/text";
 
-impl RawNode {
+impl RawNodeValue {
     fn get_mut(&mut self, fact_name: &str) -> Result<&mut Option<String>> {
         Ok(match fact_name {
             FACT_CODE => &mut self.code,
@@ -246,10 +249,10 @@ pub struct Pos {
     end: usize,
 }
 
-impl TryFrom<&RawNode> for Pos {
+impl TryFrom<&RawNodeValue> for Pos {
     type Error = ParseErr;
 
-    fn try_from(value: &RawNode) -> Result<Self> {
+    fn try_from(value: &RawNodeValue) -> Result<Self> {
         Ok(Pos {
             start: value.get_loc_start()?,
             end: value.get_loc_end()?,
@@ -263,16 +266,82 @@ pub enum AnchorKind {
     Implicit,
 }
 
-impl TryFrom<&RawNode> for AnchorKind {
+impl TryFrom<&RawNodeValue> for AnchorKind {
     type Error = ParseErr;
 
-    fn try_from(value: &RawNode) -> Result<Self> {
+    fn try_from(value: &RawNodeValue) -> Result<Self> {
         Ok(match &value.subkind {
             None => AnchorKind::Explicit(Pos::try_from(value)?),
             Some(subkind) => match subkind.as_str() {
                 "implicit" => AnchorKind::Implicit,
                 _ => Err(ParseErr::UnknownAnchorKind(subkind.to_string()))?,
             },
+        })
+    }
+}
+
+#[derive(Debug)]
+pub enum CompleteStatus {
+    Incomplete,
+    Complete,
+    Definition,
+}
+
+impl TryFrom<&str> for CompleteStatus {
+    type Error = ParseErr;
+
+    fn try_from(value: &str) -> Result<Self> {
+        Ok(match value {
+            "incomplete" => CompleteStatus::Incomplete,
+            "complete" => CompleteStatus::Complete,
+            "definition" => CompleteStatus::Definition,
+            _ => Err(ParseErr::UnknownComplete(value.to_string()))?,
+        })
+    }
+}
+
+impl TryFrom<&RawNodeValue> for CompleteStatus {
+    type Error = ParseErr;
+
+    fn try_from(value: &RawNodeValue) -> Result<Self> {
+        Ok(CompleteStatus::try_from(value.get_complete()?.as_str())?)
+    }
+}
+
+#[derive(Debug)]
+pub enum VariableKind {
+    Local,
+    LocalException,
+    LocalParam,
+    LocalResource,
+    Field,
+    Import,
+    Unspecified,
+}
+
+impl TryFrom<&str> for VariableKind {
+    type Error = ParseErr;
+
+    fn try_from(value: &str) -> Result<Self> {
+        Ok(match value {
+            "local" => VariableKind::Local,
+            "local/exception" => VariableKind::LocalException,
+            "local/parameter" => VariableKind::LocalParam,
+            "local/resource" => VariableKind::LocalResource,
+            "field" => VariableKind::Field,
+            "import" => VariableKind::Import,
+            _ => Err(ParseErr::UnknownVariableKind(value.to_string()))?,
+        })
+    }
+}
+
+impl TryFrom<&RawNodeValue> for VariableKind {
+    type Error = ParseErr;
+
+    fn try_from(value: &RawNodeValue) -> Result<Self> {
+        Ok(match &value.subkind {
+            Some(subkind) => VariableKind::try_from(subkind.as_str())?,
+            None => VariableKind::Unspecified,
         })
     }
 }
@@ -298,10 +367,10 @@ impl TryFrom<&str> for FunctionKind {
     }
 }
 
-impl TryFrom<&RawNode> for FunctionKind {
+impl TryFrom<&RawNodeValue> for FunctionKind {
     type Error = ParseErr;
 
-    fn try_from(value: &RawNode) -> Result<Self> {
+    fn try_from(value: &RawNodeValue) -> Result<Self> {
         Ok(match &value.subkind {
             Some(subkind) => FunctionKind::try_from(subkind.as_str())?,
             None => FunctionKind::None,
@@ -309,126 +378,158 @@ impl TryFrom<&RawNode> for FunctionKind {
     }
 }
 
-// C++ specific
+#[derive(Debug)]
+pub enum Lang {
+    Cpp,
+    Java,
+    Unspecified,
+}
+
+impl TryFrom<Option<&str>> for Lang {
+    type Error = ParseErr;
+
+    fn try_from(value: Option<&str>) -> Result<Self> {
+        match value {
+            Some("c++") => Ok(Lang::Cpp),
+            Some("java") => Ok(Lang::Java),
+            Some(other) => Err(ParseErr::UnknownLang(other.to_string())),
+            None => Ok(Lang::Unspecified),
+        }
+    }
+}
+
+impl TryFrom<&Ticket> for Lang {
+    type Error = ParseErr;
+
+    fn try_from(value: &Ticket) -> Result<Self> {
+        Ok(Lang::try_from(value.language.as_deref())?)
+    }
+}
+
 #[derive(Debug)]
 pub enum RecordKind {
+    Cpp(CppRecordKind),
+    Java(JavaRecordKind),
+}
+
+#[derive(Debug)]
+pub enum CppRecordKind {
     Class,
     Struct,
     Union,
 }
 
-impl TryFrom<&str> for RecordKind {
+impl TryFrom<&str> for CppRecordKind {
     type Error = ParseErr;
 
     fn try_from(value: &str) -> Result<Self> {
         Ok(match value {
-            "class" => RecordKind::Class,
-            "struct" => RecordKind::Struct,
-            "union" => RecordKind::Union,
-            _ => Err(ParseErr::UnknownRecordKind(value.to_string()))?,
+            "class" => CppRecordKind::Class,
+            "struct" => CppRecordKind::Struct,
+            "union" => CppRecordKind::Union,
+            _ => Err(ParseErr::UnknownRecordKind(Lang::Cpp, value.to_string()))?,
         })
     }
 }
 
-impl TryFrom<&RawNode> for RecordKind {
+#[derive(Debug)]
+pub enum JavaRecordKind {
+    Class,
+}
+
+impl TryFrom<&str> for JavaRecordKind {
     type Error = ParseErr;
 
-    fn try_from(value: &RawNode) -> Result<Self> {
-        Ok(RecordKind::try_from(value.get_subkind()?.as_str())?)
+    fn try_from(value: &str) -> Result<Self> {
+        Ok(match value {
+            "class" => JavaRecordKind::Class,
+            _ => Err(ParseErr::UnknownRecordKind(Lang::Java, value.to_string()))?,
+        })
     }
 }
 
-// C++ specific
+impl TryFrom<(&str, &Lang)> for RecordKind {
+    type Error = ParseErr;
+
+    fn try_from((value, lang): (&str, &Lang)) -> Result<Self> {
+        Ok(match lang {
+            Lang::Cpp => RecordKind::Cpp(CppRecordKind::try_from(value)?),
+            Lang::Java => RecordKind::Java(JavaRecordKind::try_from(value)?),
+            Lang::Unspecified => Err(ParseErr::MissingLang)?,
+        })
+    }
+}
+
+impl TryFrom<(&RawNodeValue, &Lang)> for RecordKind {
+    type Error = ParseErr;
+
+    fn try_from((value, lang): (&RawNodeValue, &Lang)) -> Result<Self> {
+        Ok(RecordKind::try_from((value.get_subkind()?.as_str(), lang))?)
+    }
+}
+
 #[derive(Debug)]
 pub enum SumKind {
+    Cpp(CppSumKind),
+    Java(JavaSumKind),
+}
+
+#[derive(Debug)]
+pub enum CppSumKind {
     Enum,
     EnumClass,
 }
 
-impl TryFrom<&str> for SumKind {
+impl TryFrom<&str> for CppSumKind {
     type Error = ParseErr;
 
     fn try_from(value: &str) -> Result<Self> {
         Ok(match value {
-            "enum" => SumKind::Enum,
-            "enumClass" => SumKind::EnumClass,
-            _ => Err(ParseErr::UnknownSumKind(value.to_string()))?,
-        })
-    }
-}
-
-impl TryFrom<&RawNode> for SumKind {
-    type Error = ParseErr;
-
-    fn try_from(value: &RawNode) -> Result<Self> {
-        Ok(SumKind::try_from(value.get_subkind()?.as_str())?)
-    }
-}
-
-#[derive(Debug)]
-pub enum VariableKind {
-    Local,
-    LocalParam,
-    Field,
-    Import,
-    Unspecified,
-}
-
-impl TryFrom<&str> for VariableKind {
-    type Error = ParseErr;
-
-    fn try_from(value: &str) -> Result<Self> {
-        Ok(match value {
-            "local" => VariableKind::Local,
-            "local/parameter" => VariableKind::LocalParam,
-            "field" => VariableKind::Field,
-            "import" => VariableKind::Import,
-            _ => Err(ParseErr::UnknownVariableKind(value.to_string()))?,
-        })
-    }
-}
-
-impl TryFrom<&RawNode> for VariableKind {
-    type Error = ParseErr;
-
-    fn try_from(value: &RawNode) -> Result<Self> {
-        Ok(match &value.subkind {
-            Some(subkind) => VariableKind::try_from(subkind.as_str())?,
-            None => VariableKind::Unspecified,
+            "enum" => CppSumKind::Enum,
+            "enumClass" => CppSumKind::EnumClass,
+            _ => Err(ParseErr::UnknownSumKind(Lang::Cpp, value.to_string()))?,
         })
     }
 }
 
 #[derive(Debug)]
-pub enum CompleteStatus {
-    Incomplete,
-    Complete,
-    Definition,
+pub enum JavaSumKind {
+    Enum,
 }
 
-impl TryFrom<&str> for CompleteStatus {
+impl TryFrom<&str> for JavaSumKind {
     type Error = ParseErr;
 
     fn try_from(value: &str) -> Result<Self> {
         Ok(match value {
-            "incomplete" => CompleteStatus::Incomplete,
-            "complete" => CompleteStatus::Complete,
-            "definition" => CompleteStatus::Definition,
-            _ => Err(ParseErr::UnknownComplete(value.to_string()))?,
+            "enum" => JavaSumKind::Enum,
+            _ => Err(ParseErr::UnknownSumKind(Lang::Java, value.to_string()))?,
         })
     }
 }
 
-impl TryFrom<&RawNode> for CompleteStatus {
+impl TryFrom<(&str, &Lang)> for SumKind {
     type Error = ParseErr;
 
-    fn try_from(value: &RawNode) -> Result<Self> {
-        Ok(CompleteStatus::try_from(value.get_complete()?.as_str())?)
+    fn try_from((value, lang): (&str, &Lang)) -> Result<Self> {
+        Ok(match lang {
+            Lang::Cpp => SumKind::Cpp(CppSumKind::try_from(value)?),
+            Lang::Java => SumKind::Java(JavaSumKind::try_from(value)?),
+            Lang::Unspecified => Err(ParseErr::MissingLang)?,
+        })
+    }
+}
+
+impl TryFrom<(&RawNodeValue, &Lang)> for SumKind {
+    type Error = ParseErr;
+
+    fn try_from((value, lang): (&RawNodeValue, &Lang)) -> Result<Self> {
+        Ok(SumKind::try_from((value.get_subkind()?.as_str(), lang))?)
     }
 }
 
 #[derive(Debug)]
-pub enum Node {
+pub enum NodeKind {
     Abs,
     Absvar,
     Anchor(AnchorKind),
@@ -458,57 +559,99 @@ pub enum Node {
     None, // Technically not allowed by spec but appears anyway.
 }
 
-impl TryFrom<RawNode> for Node {
+impl TryFrom<(RawNodeValue, &Lang)> for NodeKind {
     type Error = ParseErr;
 
-    fn try_from(raw: RawNode) -> Result<Self> {
-        if raw.is_none() {
-            return Ok(Node::None);
+    fn try_from((value, lang): (RawNodeValue, &Lang)) -> Result<Self> {
+        if value.is_none() {
+            return Ok(NodeKind::None);
         }
 
-        let node_kind = raw.get_node_kind()?;
+        let node_kind = value.get_node_kind()?;
 
-        let inner = match node_kind.as_str() {
-            "abs" => Ok(Node::Abs),
-            "absvar" => Ok(Node::Absvar),
-            "anchor" => Ok(Node::Anchor(AnchorKind::try_from(&raw)?)),
-            "constant" => Ok(Node::Constant(raw.to_text()?)),
-            "doc" => Ok(Node::Doc(raw.to_text()?)),
-            "file" => Ok(Node::File(raw.to_text()?)),
-            "function" => Ok(Node::Function(
-                CompleteStatus::try_from(&raw)?,
-                FunctionKind::try_from(&raw)?,
+        match node_kind.as_str() {
+            "abs" => Ok(NodeKind::Abs),
+            "absvar" => Ok(NodeKind::Absvar),
+            "anchor" => Ok(NodeKind::Anchor(AnchorKind::try_from(&value)?)),
+            "constant" => Ok(NodeKind::Constant(value.to_text()?)),
+            "doc" => Ok(NodeKind::Doc(value.to_text()?)),
+            "file" => Ok(NodeKind::File(value.to_text()?)),
+            "function" => Ok(NodeKind::Function(
+                CompleteStatus::try_from(&value)?,
+                FunctionKind::try_from(&value)?,
             )),
-            "lookup" => Ok(Node::Lookup(raw.to_text()?)),
-            "macro" => Ok(Node::Macro),
-            "meta" => Ok(Node::Meta),
-            "package" => Ok(Node::Package),
-            "record" => Ok(Node::Record(
-                CompleteStatus::try_from(&raw)?,
-                RecordKind::try_from(&raw)?,
+            "lookup" => Ok(NodeKind::Lookup(value.to_text()?)),
+            "macro" => Ok(NodeKind::Macro),
+            "meta" => Ok(NodeKind::Meta),
+            "package" => Ok(NodeKind::Package),
+            "record" => Ok(NodeKind::Record(
+                CompleteStatus::try_from(&value)?,
+                RecordKind::try_from((&value, lang))?,
             )),
-            "sum" => Ok(Node::Sum(
-                CompleteStatus::try_from(&raw)?,
-                SumKind::try_from(&raw)?,
+            "sum" => Ok(NodeKind::Sum(
+                CompleteStatus::try_from(&value)?,
+                SumKind::try_from((&value, lang))?,
             )),
-            "talias" => Ok(Node::Talias),
-            "tapp" => Ok(Node::Tapp),
-            "tbuiltin" => Ok(Node::Tbuiltin),
-            "tnominal" => Ok(Node::Tnominal),
-            "tsigma" => Ok(Node::Tsigma),
-            "variable" => Ok(Node::Variable(
-                CompleteStatus::try_from(&raw)?,
-                VariableKind::try_from(&raw)?,
+            "talias" => Ok(NodeKind::Talias),
+            "tapp" => Ok(NodeKind::Tapp),
+            "tbuiltin" => Ok(NodeKind::Tbuiltin),
+            "tnominal" => Ok(NodeKind::Tnominal),
+            "tsigma" => Ok(NodeKind::Tsigma),
+            "variable" => Ok(NodeKind::Variable(
+                CompleteStatus::try_from(&value)?,
+                VariableKind::try_from(&value)?,
             )),
             _ => Err(ParseErr::UnknownNodeKind(node_kind.to_string())),
-        };
+        }
+    }
+}
 
-        inner
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct FileKey {
+    pub corpus: Option<String>,
+    pub path: Option<String>,
+    pub root: Option<String>,
+}
+
+impl From<&Ticket> for FileKey {
+    fn from(ticket: &Ticket) -> Self {
+        FileKey {
+            corpus: ticket.corpus.clone(),
+            path: ticket.path.clone(),
+            root: ticket.root.clone(),
+        }
+    }
+}
+
+pub struct Node {
+    pub index: NodeIndex,
+    pub signature: Option<String>,
+    pub lang: Lang,
+    pub file_key: FileKey,
+    pub kind: NodeKind,
+}
+
+impl TryFrom<(NodeIndex, RawNodeValue, &Ticket)> for Node {
+    type Error = ParseErr;
+
+    fn try_from((index, raw, ticket): (NodeIndex, RawNodeValue, &Ticket)) -> Result<Self> {
+        let signature = ticket.signature.clone();
+        let lang = Lang::try_from(ticket)?;
+        let file_key = FileKey::from(ticket);
+        let kind = NodeKind::try_from((raw, &lang))?;
+
+        Ok(Node {
+            index,
+            signature,
+            lang,
+            file_key,
+            kind,
+        })
     }
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
-pub struct NodeIndex(usize);
+pub struct NodeIndex(pub usize);
 
 impl From<&NodeIndex> for usize {
     fn from(value: &NodeIndex) -> Self {
@@ -518,7 +661,7 @@ impl From<&NodeIndex> for usize {
 
 #[derive(Debug, Default)]
 pub struct RawKGraph {
-    nodes: Vec<RawNode>,
+    nodes: Vec<RawNodeValue>,
     edges: KindedEdgeBag<EdgeKind, NodeIndex>,
     tickets: BiHashMap<Ticket, NodeIndex>,
 }
@@ -534,7 +677,7 @@ impl RawKGraph {
             Some(index) => *index,
             None => {
                 let index = NodeIndex(self.nodes.len());
-                self.nodes.push(RawNode::default());
+                self.nodes.push(RawNodeValue::default());
                 self.tickets.insert(ticket, index);
                 index
             }
@@ -589,93 +732,89 @@ impl TryFrom<EntryReader> for RawKGraph {
     }
 }
 
-#[derive(Debug)]
-pub struct NodeTriple<'a> {
-    pub index: &'a NodeIndex,
-    pub node: &'a Node,
-    pub ticket: &'a Ticket,
-}
-
 pub struct KGraph {
-    pub nodes: Vec<Node>,
-    pub edges: KindedEdgeBag<EdgeKind, NodeIndex>,
-    pub tickets: BiHashMap<Ticket, NodeIndex>,
+    nodes: Vec<Node>,
+    files: HashMap<FileKey, NodeIndex>,
+    edges: KindedEdgeBag<EdgeKind, NodeIndex>,
 }
 
 impl KGraph {
+    pub fn get_node(&self, index: &NodeIndex) -> Option<&Node> {
+        self.nodes.get(index.0)
+    }
+
     #[allow(dead_code)]
-    pub fn open(_: &Path) -> Result<Self> {
-        todo!()
+    pub fn get_file_bi(&self, index: &NodeIndex) -> Option<&NodeIndex> {
+        self.get_file_bn(self.get_node(index)?)
     }
 
-    pub fn triple<'a>(&'a self, index: &'a NodeIndex) -> Option<NodeTriple> {
-        let node = self.nodes.get(index.0)?;
-        let ticket = self.tickets.get_by_right(index)?;
-        Some(NodeTriple {
-            index,
-            node,
-            ticket,
-        })
+    pub fn get_file_bn(&self, node: &Node) -> Option<&NodeIndex> {
+        self.files.get(&node.file_key)
     }
 
-    pub fn parent_of(&self, index: &NodeIndex) -> Option<&NodeIndex> {
-        self.edges.outgoing(&EdgeKind::Childof, index).exactly_one().ok().map(|(i, _)| i)
+    pub fn get_name_bi(&self, index: &NodeIndex) -> Option<&str> {
+        self.get_name_bn(self.get_node(index)?)
     }
 
-    pub fn name_of(&self, triple: &NodeTriple) -> Option<&str> {
-        if let Node::Anchor(AnchorKind::Explicit(pos)) = triple.node {
-            return self.lookup_pos(&file_of(triple.ticket), pos);
+    pub fn get_name_bn(&self, node: &Node) -> Option<&str> {
+        if let NodeKind::Anchor(AnchorKind::Explicit(pos)) = &node.kind {
+            return self.get_text_bi(self.get_file_bn(node)?, pos);
         }
 
-        for (index, _) in self.edges.incoming(&EdgeKind::DefinesBinding, &triple.index) {
-            let name = self.name_of(&self.triple(index)?);
-
-            if name.is_some() {
-                return name;
-            }
-        }
-
-        return None;
+        self.get_name_bi(self.get_binding(&node.index)?)
     }
 
-    fn lookup_pos(&self, ticket: &Ticket, pos: &Pos) -> Option<&str> {
-        let index = self.tickets.get_by_left(ticket)?;
+    pub fn get_text_bi(&self, index: &NodeIndex, pos: &Pos) -> Option<&str> {
+        self.get_text_bn(self.get_node(index)?, pos)
+    }
 
-        match self.nodes.get(index.0)? {
-            Node::File(text) => Some(&text[pos.start..pos.end]),
+    pub fn get_text_bn<'g, 'n>(&'g self, node: &'n Node, pos: &Pos) -> Option<&'n str> {
+        match &node.kind {
+            NodeKind::File(text) => Some(&text[pos.start..pos.end]),
             _ => None,
         }
     }
-}
 
-fn file_of(ticket: &Ticket) -> Ticket {
-    Ticket {
-        corpus: ticket.corpus.clone(),
-        language: None,
-        path: ticket.path.clone(),
-        root: ticket.root.clone(),
-        signature: None,
+    pub fn get_binding(&self, index: &NodeIndex) -> Option<&NodeIndex> {
+        let incoming = self.edges.incoming(&EdgeKind::DefinesBinding, &index);
+        incoming.at_most_one().ok().unwrap().map(|(i, _)| i)
+    }
+
+    pub fn get_parent(&self, index: &NodeIndex) -> Option<&NodeIndex> {
+        let incoming = self.edges.outgoing(&EdgeKind::Childof, &index);
+        incoming.at_most_one().ok().unwrap().map(|(i, _)| i)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&EdgeKind, &NodeIndex, &NodeIndex, &usize)> + '_ {
+        self.edges.iter()
     }
 }
 
 impl TryFrom<RawKGraph> for KGraph {
     type Error = ParseErr;
 
-    fn try_from(raw: RawKGraph) -> Result<Self> {
-        let nodes = raw
-            .nodes
-            .into_iter()
-            .enumerate()
-            .map(|(i, raw_node)| {
-                Node::try_from(raw_node)
-                    .map_err(|e| ParseErr::SequencingErr(NodeIndex(i), Box::new(e)))
-            })
-            .collect::<Result<Vec<Node>>>()?;
+    fn try_from(raw_graph: RawKGraph) -> Result<Self> {
+        let edges = raw_graph.edges;
+        let mut nodes = Vec::with_capacity(raw_graph.nodes.len());
+        let mut files = HashMap::new();
+
+        for (i, raw_node) in raw_graph.nodes.into_iter().enumerate() {
+            let index = NodeIndex(i);
+            let ticket = raw_graph.tickets.get_by_right(&index).unwrap();
+            let node = Node::try_from((index, raw_node, ticket))
+                .map_err(|e| ParseErr::SequencingErr(index, Box::new(e)))?;
+
+            if let NodeKind::File(_) = node.kind {
+                files.insert(node.file_key.clone(), index);
+            }
+
+            nodes.push(node);
+        }
 
         Ok(KGraph {
             nodes,
-            edges: raw.edges,
-            tickets: raw.tickets,
+            files,
+            edges,
         })
     }
 }

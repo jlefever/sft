@@ -4,7 +4,7 @@ use dot_writer::DotWriter;
 use crate::io::EntryReader;
 use crate::io::Writer;
 use crate::kythe::EdgeKind;
-use crate::kythe::NodeTriple;
+use crate::kythe::NodeIndex;
 use crate::kythe::RawKGraph;
 use crate::kythe::KGraph;
 
@@ -56,16 +56,16 @@ impl CliCommand for CliDisplayCommand {
 
             let mut nodes_used = HashSet::new();
 
-            for (kind, src, tgt, count) in graph.edges.iter() {
+            for (kind, src, tgt, count) in graph.iter() {
                 match kind {
-                    EdgeKind::Ref => (),
-                    // EdgeKind::RefCall => (),
+                    // EdgeKind::Ref => (),
+                    EdgeKind::RefCall => (),
                     // EdgeKind::RefCallImplicit => (),
                     // EdgeKind::RefId => (),
                     _ => continue,
                 };
 
-                let src = match graph.parent_of(src) {
+                let src = match graph.get_parent(src) {
                     Some(parent) => parent,
                     None => {
                         continue;
@@ -76,15 +76,14 @@ impl CliCommand for CliDisplayCommand {
                 nodes_used.insert(tgt);
 
                 digraph
-                    .edge(&usize::from(src).to_string(), &usize::from(tgt).to_string())
+                    .edge(src.0.to_string(), tgt.0.to_string())
                     .attributes()
                     .set_label(&format!("{:?} ({})", kind, count));
             }
 
             for index in nodes_used {
-                let triple = graph.triple(index).unwrap();
-                let mut node = digraph.node_named(&usize::from(index).to_string());
-                node.set_label(&create_label(&graph, &triple));
+                let mut node = digraph.node_named(index.0.to_string());
+                node.set_label(&create_label(&graph, index));
             }
         }
 
@@ -92,14 +91,14 @@ impl CliCommand for CliDisplayCommand {
     }
 }
 
-fn create_label(graph: &KGraph, triple: &NodeTriple) -> String {
-    let index = usize::from(triple.index);
-    let path = triple.ticket.path.as_ref().map(String::as_str).unwrap_or_default();
+fn create_label(graph: &KGraph, index: &NodeIndex) -> String {
+    let node = graph.get_node(index).unwrap();
+    let path = node.file_key.path.as_ref().map(String::as_str).unwrap_or_default();
 
-    let node_str = format!("{:?}", triple.node).replace("\"", "'");
+    let node_str = format!("{:?}", node.kind).replace("\"", "'");
 
-    match graph.name_of(triple) {
-        Some(name) => format!("{} '{}' ({}) [{}]", index, name, node_str, path),
-        None => format!("{} ({}) [{}]", index, node_str, path),
+    match graph.get_name_bn(node) {
+        Some(name) => format!("{} '{}' ({}) [{}]", index.0, name, node_str, path),
+        None => format!("{} ({}) [{}]", index.0, node_str, path),
     }
 }
