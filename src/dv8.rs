@@ -1,19 +1,19 @@
 use std::{collections::HashMap, io, path::Path};
 
 use crate::{
-    collections::{KindedEdgeBag, NodeId, NodeKeeper},
+    collections::{KindedEdgeBag, ItemId, IdMap},
     io::{Entry, EntryReader},
 };
 
 pub struct Dv8Graph {
-    nodes: NodeKeeper<String>,
-    edges: KindedEdgeBag<String, NodeId>,
+    nodes: IdMap<String>,
+    edges: KindedEdgeBag<String, ItemId>,
 }
 
 impl Dv8Graph {
     pub fn new() -> Self {
         Self {
-            nodes: NodeKeeper::new(),
+            nodes: IdMap::new(),
             edges: KindedEdgeBag::new(),
         }
     }
@@ -22,11 +22,11 @@ impl Dv8Graph {
         Ok(Self::from(EntryReader::open(path)?))
     }
 
-    pub fn insert_var(&mut self, filename: String) -> NodeId {
+    pub fn insert_var(&mut self, filename: String) -> ItemId {
         self.nodes.insert(filename)
     }
 
-    pub fn insert_dep(&mut self, edge_kind: String, src: NodeId, tgt: NodeId) {
+    pub fn insert_dep(&mut self, edge_kind: String, src: ItemId, tgt: ItemId) {
         self.edges.insert(edge_kind, src, tgt);
     }
 }
@@ -106,8 +106,8 @@ impl Dv8Cell {
     }
 }
 
-fn to_vars(keeper: NodeKeeper<String>) -> Vec<String> {
-    let mut node_pairs: Vec<(NodeId, String)> = keeper.into_iter().collect();
+fn to_vars(keeper: IdMap<String>) -> Vec<String> {
+    let mut node_pairs: Vec<(ItemId, String)> = keeper.into_iter().collect();
     node_pairs.sort_by(|&(a_id, _), &(b_id, _)| a_id.cmp(&b_id));
 
     // Confirm that there are no gaps in node ids
@@ -150,7 +150,7 @@ fn to_dv8_edge_kind(edge_kind: &String) -> Option<&'static str> {
     }
 }
 
-fn to_cells(edges: KindedEdgeBag<String, NodeId>, indices: Vec<usize>) -> Vec<Dv8Cell> {
+fn to_cells(edges: KindedEdgeBag<String, ItemId>, indices: Vec<usize>) -> Vec<Dv8Cell> {
     let mut pair_map: HashMap<(usize, usize), HashMap<&'static str, usize>> = HashMap::new();
 
     for (kind, &src, &tgt, &count) in edges.iter() {

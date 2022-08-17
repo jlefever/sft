@@ -1,13 +1,14 @@
 use dot_writer::Attributes;
 use dot_writer::DotWriter;
 
-use base64;
-
-use crate::collections::NodeId;
-use crate::io::Ticket;
+use crate::io::EntryReader;
 use crate::io::Writer;
-use crate::kythe::RawKytheGraph;
+use crate::kythe::EdgeKind;
+use crate::kythe::NodeTriple;
+use crate::kythe::RawKGraph;
+use crate::kythe::KGraph;
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -41,46 +42,49 @@ impl CliCommand for CliDisplayCommand {
         let mut writer = Writer::open(output).unwrap();
 
         let start = Instant::now();
-        let graph = RawKytheGraph::open(input).unwrap();
+        let reader = EntryReader::open(input).unwrap();
+        let raw_graph = RawKGraph::try_from(reader).unwrap();
+        log::debug!("Loaded raw graph in {} secs.", start.elapsed().as_secs_f32());
+        let start = Instant::now();
+        let graph = KGraph::try_from(raw_graph).unwrap();
         log::debug!("Loaded graph in {} secs.", start.elapsed().as_secs_f32());
 
         let mut output_bytes: Vec<u8> = Vec::new();
         {
-            let mut writer = DotWriter::from(&mut output_bytes);
-            let mut digraph = writer.digraph();
+            let mut dot_writer = DotWriter::from(&mut output_bytes);
+            let mut digraph = dot_writer.digraph();
+
+            let mut nodes_used = HashSet::new();
 
             for (kind, src, tgt, count) in graph.edges.iter() {
-                let kind = kind.strip_prefix("/kythe/edge/").unwrap();
+                match kind {
+                    EdgeKind::Ref => (),
+                    // EdgeKind::RefCall => (),
+                    // EdgeKind::RefCallImplicit => (),
+                    // EdgeKind::RefId => (),
+                    _ => continue,
+                };
 
-                if kind != "defines/binding" && kind != "ref/call" && kind != "childof" {
-                    continue;
-                }
+                let src = match graph.parent_of(src) {
+                    Some(parent) => parent,
+                    None => {
+                        continue;
+                    },
+                };
 
-                let src_name = String::from(*src);
-                let tgt_name = String::from(*tgt);
+                nodes_used.insert(src);
+                nodes_used.insert(tgt);
 
-                let src_label = create_label(&graph, src);
-                let tgt_label = create_label(&graph, tgt);
-
-                if src_label.is_none() || tgt_label.is_none() {
-                    continue;
-                }
-
-                {
-                    let mut src_node = digraph.node_named(&src_name);
-                    src_node.set_label(&src_label.unwrap());
-                }
-
-                {
-                    let mut tgt_node = digraph.node_named(&tgt_name);
-                    tgt_node.set_label(&tgt_label.unwrap());
-                }
-
-                let edge_label = format!("{} ({})", kind, count);
                 digraph
-                    .edge(&src_name, &tgt_name)
+                    .edge(&usize::from(src).to_string(), &usize::from(tgt).to_string())
                     .attributes()
-                    .set_label(&edge_label);
+                    .set_label(&format!("{:?} ({})", kind, count));
+            }
+
+            for index in nodes_used {
+                let triple = graph.triple(index).unwrap();
+                let mut node = digraph.node_named(&usize::from(index).to_string());
+                node.set_label(&create_label(&graph, &triple));
             }
         }
 
@@ -88,54 +92,14 @@ impl CliCommand for CliDisplayCommand {
     }
 }
 
-// /kythe/text
-// /kythe/loc/start
-// /kythe/loc/end
+fn create_label(graph: &KGraph, triple: &NodeTriple) -> String {
+    let index = usize::from(triple.index);
+    let path = triple.ticket.path.as_ref().map(String::as_str).unwrap_or_default();
 
-fn file_of(anchor: &Ticket) -> Ticket {
-    Ticket {
-        corpus: anchor.corpus.clone(),
-        language: None,
-        path: anchor.path.clone(),
-        root: anchor.root.clone(),
-        signature: None,
+    let node_str = format!("{:?}", triple.node).replace("\"", "'");
+
+    match graph.name_of(triple) {
+        Some(name) => format!("{} '{}' ({}) [{}]", index, name, node_str, path),
+        None => format!("{} ({}) [{}]", index, node_str, path),
     }
 }
-
-fn create_label(graph: &RawKytheGraph, id: &NodeId) -> Option<String> {
-    let ticket = graph.get_node(id)?;
-    let kind = graph.get_fact(id, "/kythe/node/kind")?;
-    let path = ticket.path.as_ref()?;
-
-    if kind != "anchor" {
-        return Some(format!("{} ({}) [{}]", String::from(*id), kind, path));
-    }
-
-    let start: usize = graph.get_fact(id, "/kythe/loc/start")?.parse().unwrap();
-    let end: usize = graph.get_fact(id, "/kythe/loc/end")?.parse().unwrap();
-
-    let file_id = graph.get_node_id(&file_of(&ticket)).unwrap();
-    let text = graph.get_fact(file_id, "/kythe/text").unwrap();
-    let mut content = String::from_utf8(text.as_bytes()[start..end].to_vec()).unwrap();
-    content = content.replace("//", "\\\\");
-    content = content.replace("\"", "'");
-
-    let content: String = content.chars().take_while(|&c| c != '\n').collect();
-
-    return Some(format!(
-        "{} ({}) '{}' [{}]",
-        String::from(*id),
-        kind,
-        content,
-        path
-    ));
-}
-
-struct Anchor {
-    start: usize,
-    end: usize,
-}
-
-// fn lookup(graph: &KytheGraph, fact_name: &'static str) -> &String {
-
-// }

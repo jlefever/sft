@@ -2,8 +2,6 @@ use crate::dv8::Dv8Graph;
 use crate::dv8::Dv8Matrix;
 use crate::io::Writer;
 
-use std::io::Write;
-use std::path::Path;
 use std::path::PathBuf;
 use std::time::Instant;
 

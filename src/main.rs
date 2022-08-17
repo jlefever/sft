@@ -28,6 +28,7 @@ enum CliSubCommand {
     Display(commands::display::CliDisplayCommand),
     Exclude(commands::exclude::CliExcludeCommand),
     Dsm(commands::dsm::CliDsmCommand),
+    List(commands::list::CliListCommand),
 }
 
 fn main() {
@@ -52,6 +53,7 @@ fn main() {
             CliSubCommand::Exclude(com) => com.execute(),
             CliSubCommand::Display(com) => com.execute(),
             CliSubCommand::Dsm(com) => com.execute(),
+            CliSubCommand::List(com) => com.execute(),
         },
     }
 }
