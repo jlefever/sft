@@ -97,26 +97,26 @@ impl<N: Copy + Eq + Hash> EdgeBag<N> {
         *count
     }
 
-    pub fn outgoing(&self, src: &N) -> impl Iterator<Item = (&N, &usize)> + '_ {
+    pub fn outgoing(&self, src: &N) -> impl Iterator<Item = (N, usize)> + '_ {
         self.outgoing
             .get(src)
-            .map(|inner| inner.iter().map(move |(tgt, count)| (tgt, count)))
+            .map(|inner| inner.iter().map(move |(tgt, count)| (*tgt, *count)))
             .into_iter()
             .flatten()
     }
 
-    pub fn incoming(&self, tgt: &N) -> impl Iterator<Item = (&N, &usize)> + '_ {
+    pub fn incoming(&self, tgt: &N) -> impl Iterator<Item = (N, usize)> + '_ {
         self.incoming
             .get(tgt)
-            .map(|inner| inner.iter().map(move |(src, count)| (src, count)))
+            .map(|inner| inner.iter().map(move |(src, count)| (*src, *count)))
             .into_iter()
             .flatten()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&N, &N, &usize)> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (N, N, usize)> + '_ {
         self.outgoing
             .iter()
-            .flat_map(|(src, tgts)| tgts.iter().map(move |(tgt, count)| (src, tgt, count)))
+            .flat_map(|(src, tgts)| tgts.iter().map(move |(tgt, count)| (*src, *tgt, *count)))
     }
 }
 
@@ -127,7 +127,7 @@ pub struct KindedEdgeBag<K, N> {
 
 impl<K, N> KindedEdgeBag<K, N>
 where
-    K: Eq + Hash,
+    K: Copy + Eq + Hash,
     N: Copy + Default + Eq + Hash,
 {
     pub fn new() -> Self {
@@ -140,19 +140,19 @@ where
         self.bags.entry(kind).or_default().insert(src, tgt)
     }
 
-    pub fn outgoing(&self, kind: &K, src: &N) -> impl Iterator<Item = (&N, &usize)> + '_ {
+    pub fn outgoing(&self, kind: &K, src: &N) -> impl Iterator<Item = (N, usize)> + '_ {
         self.bags.get(&kind).map(|m| m.outgoing(src)).into_iter().flatten()
     }
 
-    pub fn incoming(&self, kind: &K, tgt: &N) -> impl Iterator<Item = (&N, &usize)> + '_ {
+    pub fn incoming(&self, kind: &K, tgt: &N) -> impl Iterator<Item = (N, usize)> + '_ {
         self.bags.get(&kind).map(|m| m.incoming(tgt)).into_iter().flatten()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&K, &N, &N, &usize)> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (K, N, N, usize)> + '_ {
         self.bags.iter().flat_map(|(kind, edge_set)| {
             edge_set
                 .iter()
-                .map(move |(src, tgt, count)| (kind, src, tgt, count))
+                .map(move |(src, tgt, count)| (*kind, src, tgt, count))
         })
     }
 }
@@ -169,7 +169,7 @@ mod tests {
 
         bag.insert(3, 4);
 
-        let set: HashSet<(&usize, &usize, &usize)> = bag.iter().collect();
-        assert!(set.contains(&(&3, &4, &1)));
+        let set: HashSet<(usize, usize, usize)> = bag.iter().collect();
+        assert!(set.contains(&(3, 4, 1)));
     }
 }

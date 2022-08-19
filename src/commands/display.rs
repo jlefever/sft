@@ -1,14 +1,8 @@
-use dot_writer::Attributes;
-use dot_writer::DotWriter;
+use dot_writer::{Attributes, DotWriter};
 
-use crate::io::EntryReader;
-use crate::io::Writer;
-use crate::ir::EdgeKind;
-use crate::ir::NodeIndex;
-use crate::ir::RawKGraph;
-use crate::ir::KGraph;
+use crate::io::{EntryReader, Writer};
+use crate::ir::{Dep, Entity, EntityGraph, SpecGraph, RawGraph, NodeKind};
 
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -41,64 +35,56 @@ impl CliCommand for CliDisplayCommand {
         let output = self.output.as_ref().map(PathBuf::as_path);
         let mut writer = Writer::open(output).unwrap();
 
+        // Load graph
         let start = Instant::now();
         let reader = EntryReader::open(input).unwrap();
-        let raw_graph = RawKGraph::try_from(reader).unwrap();
+        let graph = RawGraph::try_from(reader).unwrap();
         log::debug!("Loaded raw graph in {} secs.", start.elapsed().as_secs_f32());
         let start = Instant::now();
-        let graph = KGraph::try_from(raw_graph).unwrap();
-        log::debug!("Loaded graph in {} secs.", start.elapsed().as_secs_f32());
+        let graph = SpecGraph::try_from(graph).unwrap();
+        log::debug!("Loaded spec graph in {} secs.", start.elapsed().as_secs_f32());
+        let graph = EntityGraph::try_from(graph).unwrap();
 
+        println!("{:#?}", graph);
+
+        // Setup graphviz stuff
         let mut output_bytes: Vec<u8> = Vec::new();
         {
             let mut dot_writer = DotWriter::from(&mut output_bytes);
             let mut digraph = dot_writer.digraph();
-
-            let mut nodes_used = HashSet::new();
-
-            for (kind, src, tgt, count) in graph.iter() {
-                match kind {
-                    // EdgeKind::Ref => (),
-                    EdgeKind::RefCall => (),
-                    // EdgeKind::RefCallImplicit => (),
-                    // EdgeKind::RefId => (),
-                    _ => continue,
-                };
-
-                let src = match graph.get_parent(src) {
-                    Some(parent) => parent,
-                    None => {
-                        continue;
-                    },
-                };
-
-                nodes_used.insert(src);
-                nodes_used.insert(tgt);
-
-                digraph
-                    .edge(src.0.to_string(), tgt.0.to_string())
-                    .attributes()
-                    .set_label(&format!("{:?} ({})", kind, count));
+    
+            // Add nodes to DOT graph
+            for entity in graph.entities.values() {
+                let mut node = digraph.node_named(entity.id.to_string());
+                node.set_label(&to_node_label(entity));
             }
-
-            for index in nodes_used {
-                let mut node = digraph.node_named(index.0.to_string());
-                node.set_label(&create_label(&graph, index));
+    
+            // Add edges to DOT graph
+            for dep in &graph.deps {
+                let edge = digraph.edge(dep.src.to_string(), dep.tgt.to_string());
+                edge.attributes().set_label(&to_edge_label(dep));
             }
         }
 
+        // Write output
         writer.write(&output_bytes).unwrap();
     }
 }
 
-fn create_label(graph: &KGraph, index: &NodeIndex) -> String {
-    let node = graph.get_node(index).unwrap();
-    let path = node.file_key.path.as_ref().map(String::as_str).unwrap_or_default();
+fn clean(text: String) -> String {
+    text.replace("\"", "'")
+}
 
-    let node_str = format!("{:?}", node.kind).replace("\"", "'");
+fn to_node_label(entity: &Entity) -> String {
+    let kind = match &entity.kind {
+        NodeKind::Doc(text) => NodeKind::Doc(text[..18].to_string()),
+        NodeKind::File(text) => NodeKind::File(text[..18].to_string()),
+        kind => kind.clone(),
+    };
+    
+    clean(format!("{}\n<{:?}>", entity.name, kind))
+}
 
-    match graph.get_name_bn(node) {
-        Some(name) => format!("{} '{}' ({}) [{}]", index.0, name, node_str, path),
-        None => format!("{} ({}) [{}]", index.0, node_str, path),
-    }
+fn to_edge_label(dep: &Dep) -> String {
+    clean(format!("{:?} ({})", dep.kind, dep.count))
 }

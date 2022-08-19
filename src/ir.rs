@@ -1,14 +1,17 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::fmt::Display;
 use std::hash::Hash;
 
 use bimap::BiHashMap;
 use itertools::Itertools;
 
+use std::result::Result;
+
 use crate::collections::KindedEdgeBag;
 use crate::io::{Entry, EntryReader, Ticket};
 
 #[derive(Debug)]
-pub enum TranslationErr {
+pub enum IntoSpecErr {
     UnknownAnchorKind(String),
     UnknownEdgeKind(String),
     UnknownFactName(String),
@@ -22,12 +25,12 @@ pub enum TranslationErr {
     MissingFact(&'static str),
     MissingLang,
     ExpectedInt,
-    SequencingErr(NodeIndex, Box<TranslationErr>),
+    SequencingErr(NodeIndex, Box<IntoSpecErr>),
 }
 
-type Result<T> = std::result::Result<T, TranslationErr>;
+type IntoSpecRes<T> = Result<T, IntoSpecErr>;
 
-#[derive(Default, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Default, Debug, Eq, Hash, PartialEq)]
 pub enum EdgeKind {
     Aliases,
     AliasesRoot,
@@ -70,9 +73,9 @@ pub enum EdgeKind {
 }
 
 impl TryFrom<&str> for EdgeKind {
-    type Error = TranslationErr;
+    type Error = IntoSpecErr;
 
-    fn try_from(value: &str) -> Result<Self> {
+    fn try_from(value: &str) -> IntoSpecRes<Self> {
         Ok(match value {
             "/kythe/edge/aliases" => EdgeKind::Aliases,
             "/kythe/edge/aliases/root" => EdgeKind::AliasesRoot,
@@ -111,9 +114,9 @@ impl TryFrom<&str> for EdgeKind {
             "/kythe/edge/typed" => EdgeKind::Typed,
             "/kythe/edge/undefines" => EdgeKind::Undefines,
             _ => match value.strip_prefix("/kythe/edge/param.") {
-                None => Err(TranslationErr::UnknownEdgeKind(value.to_string()))?,
+                None => Err(IntoSpecErr::UnknownEdgeKind(value.to_string()))?,
                 Some(num) => {
-                    EdgeKind::Param(num.parse::<u8>().map_err(|_| TranslationErr::ExpectedInt)?)
+                    EdgeKind::Param(num.parse::<u8>().map_err(|_| IntoSpecErr::ExpectedInt)?)
                 }
             },
         })
@@ -146,7 +149,7 @@ const FACT_TAG_STATIC: &'static str = "/kythe/tag/static";
 const FACT_TEXT: &'static str = "/kythe/text";
 
 impl RawNodeValue {
-    fn get_mut(&mut self, fact_name: &str) -> Result<&mut Option<String>> {
+    fn get_mut(&mut self, fact_name: &str) -> IntoSpecRes<&mut Option<String>> {
         Ok(match fact_name {
             FACT_CODE => &mut self.code,
             FACT_COMPLETE => &mut self.complete,
@@ -158,16 +161,16 @@ impl RawNodeValue {
             FACT_TAG_DEPRECATED => &mut self.tag_deprecated,
             FACT_TAG_STATIC => &mut self.tag_static,
             FACT_TEXT => &mut self.text,
-            _ => Err(TranslationErr::UnknownFactName(fact_name.to_string()))?,
+            _ => Err(IntoSpecErr::UnknownFactName(fact_name.to_string()))?,
         })
     }
 
-    fn set(&mut self, fact_name: &str, fact_value: String) -> Result<bool> {
+    fn set(&mut self, fact_name: &str, fact_value: String) -> IntoSpecRes<bool> {
         Ok(self.get_mut(fact_name)?.replace(fact_value).is_none())
     }
 
-    fn to_text(self) -> Result<String> {
-        self.text.ok_or(TranslationErr::MissingFact(FACT_TEXT))
+    fn to_text(self) -> IntoSpecRes<String> {
+        self.text.ok_or(IntoSpecErr::MissingFact(FACT_TEXT))
     }
 
     fn is_none(&self) -> bool {
@@ -184,52 +187,52 @@ impl RawNodeValue {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Pos {
     start: usize,
     end: usize,
 }
 
 impl TryFrom<&RawNodeValue> for Pos {
-    type Error = TranslationErr;
+    type Error = IntoSpecErr;
 
-    fn try_from(value: &RawNodeValue) -> Result<Self> {
+    fn try_from(value: &RawNodeValue) -> IntoSpecRes<Self> {
         let start = value
             .loc_start
             .as_deref()
-            .ok_or(TranslationErr::MissingFact(FACT_LOC_START))?
+            .ok_or(IntoSpecErr::MissingFact(FACT_LOC_START))?
             .parse::<usize>()
-            .map_err(|_| TranslationErr::ExpectedInt)?;
+            .map_err(|_| IntoSpecErr::ExpectedInt)?;
         let end = value
             .loc_end
             .as_deref()
-            .ok_or(TranslationErr::MissingFact(FACT_LOC_END))?
+            .ok_or(IntoSpecErr::MissingFact(FACT_LOC_END))?
             .parse::<usize>()
-            .map_err(|_| TranslationErr::ExpectedInt)?;
+            .map_err(|_| IntoSpecErr::ExpectedInt)?;
 
         Ok(Pos { start, end })
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum AnchorKind {
     Explicit(Pos),
     Implicit,
 }
 
 impl TryFrom<&RawNodeValue> for AnchorKind {
-    type Error = TranslationErr;
+    type Error = IntoSpecErr;
 
-    fn try_from(value: &RawNodeValue) -> Result<Self> {
+    fn try_from(value: &RawNodeValue) -> IntoSpecRes<Self> {
         match &value.subkind.as_deref() {
             Some("implicit") => Ok(AnchorKind::Implicit),
-            Some(str) => Err(TranslationErr::UnknownAnchorKind(str.to_string())),
+            Some(str) => Err(IntoSpecErr::UnknownAnchorKind(str.to_string())),
             None => Ok(AnchorKind::Explicit(Pos::try_from(value)?)),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum CompleteStatus {
     Incomplete,
     Complete,
@@ -237,20 +240,20 @@ pub enum CompleteStatus {
 }
 
 impl TryFrom<Option<&str>> for CompleteStatus {
-    type Error = TranslationErr;
+    type Error = IntoSpecErr;
 
-    fn try_from(value: Option<&str>) -> Result<Self> {
+    fn try_from(value: Option<&str>) -> IntoSpecRes<Self> {
         match value {
             Some("incomplete") => Ok(CompleteStatus::Incomplete),
             Some("complete") => Ok(CompleteStatus::Complete),
             Some("definition") => Ok(CompleteStatus::Definition),
-            Some(str) => Err(TranslationErr::UnknownComplete(str.to_string())),
-            None => Err(TranslationErr::MissingFact(FACT_COMPLETE)),
+            Some(str) => Err(IntoSpecErr::UnknownComplete(str.to_string())),
+            None => Err(IntoSpecErr::MissingFact(FACT_COMPLETE)),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum VariableKind {
     Local,
     LocalException,
@@ -262,9 +265,9 @@ pub enum VariableKind {
 }
 
 impl TryFrom<Option<&str>> for VariableKind {
-    type Error = TranslationErr;
+    type Error = IntoSpecErr;
 
-    fn try_from(value: Option<&str>) -> Result<Self> {
+    fn try_from(value: Option<&str>) -> IntoSpecRes<Self> {
         match value {
             Some("local") => Ok(VariableKind::Local),
             Some("local/exception") => Ok(VariableKind::LocalException),
@@ -272,13 +275,13 @@ impl TryFrom<Option<&str>> for VariableKind {
             Some("local/resource") => Ok(VariableKind::LocalResource),
             Some("field") => Ok(VariableKind::Field),
             Some("import") => Ok(VariableKind::Import),
-            Some(str) => Err(TranslationErr::UnknownVariableKind(str.to_string())),
+            Some(str) => Err(IntoSpecErr::UnknownVariableKind(str.to_string())),
             None => Ok(VariableKind::Unspecified),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum FunctionKind {
     Constructor,
     Destructor,
@@ -286,21 +289,21 @@ pub enum FunctionKind {
 }
 
 impl TryFrom<Option<&str>> for FunctionKind {
-    type Error = TranslationErr;
+    type Error = IntoSpecErr;
 
-    fn try_from(value: Option<&str>) -> Result<Self> {
+    fn try_from(value: Option<&str>) -> IntoSpecRes<Self> {
         match value {
             Some("constructor") => Ok(FunctionKind::Constructor),
             Some("initializer") => Ok(FunctionKind::Constructor),
             Some("destructor") => Ok(FunctionKind::Destructor),
             Some("none") => Ok(FunctionKind::Unspecified),
-            Some(str) => Err(TranslationErr::UnknownFunctionKind(str.to_string())),
+            Some(str) => Err(IntoSpecErr::UnknownFunctionKind(str.to_string())),
             None => Ok(FunctionKind::Unspecified),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Lang {
     Cpp,
     Java,
@@ -308,25 +311,25 @@ pub enum Lang {
 }
 
 impl TryFrom<Option<&str>> for Lang {
-    type Error = TranslationErr;
+    type Error = IntoSpecErr;
 
-    fn try_from(value: Option<&str>) -> Result<Self> {
+    fn try_from(value: Option<&str>) -> IntoSpecRes<Self> {
         match value {
             Some("c++") => Ok(Lang::Cpp),
             Some("java") => Ok(Lang::Java),
-            Some(str) => Err(TranslationErr::UnknownLang(str.to_string())),
+            Some(str) => Err(IntoSpecErr::UnknownLang(str.to_string())),
             None => Ok(Lang::Unspecified),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum RecordKind {
     Cpp(CppRecordKind),
     Java(JavaRecordKind),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum CppRecordKind {
     Class,
     Struct,
@@ -334,103 +337,104 @@ pub enum CppRecordKind {
 }
 
 impl TryFrom<Option<&str>> for CppRecordKind {
-    type Error = TranslationErr;
+    type Error = IntoSpecErr;
 
-    fn try_from(value: Option<&str>) -> Result<Self> {
+    fn try_from(value: Option<&str>) -> IntoSpecRes<Self> {
         match value {
             Some("class") => Ok(CppRecordKind::Class),
             Some("struct") => Ok(CppRecordKind::Struct),
             Some("union") => Ok(CppRecordKind::Union),
-            Some(str) => Err(TranslationErr::UnknownRecordKind(Lang::Cpp, str.to_string()))?,
-            None => Err(TranslationErr::MissingFact(FACT_SUBKIND)),
+            Some(str) => Err(IntoSpecErr::UnknownRecordKind(Lang::Cpp, str.to_string()))?,
+            None => Err(IntoSpecErr::MissingFact(FACT_SUBKIND)),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum JavaRecordKind {
     Class,
 }
 
 impl TryFrom<Option<&str>> for JavaRecordKind {
-    type Error = TranslationErr;
+    type Error = IntoSpecErr;
 
-    fn try_from(value: Option<&str>) -> Result<Self> {
+    fn try_from(value: Option<&str>) -> IntoSpecRes<Self> {
         match value {
             Some("class") => Ok(JavaRecordKind::Class),
-            Some(str) => Err(TranslationErr::UnknownRecordKind(Lang::Java, str.to_string()))?,
-            None => Err(TranslationErr::MissingFact(FACT_SUBKIND)),
+            Some(str) => Err(IntoSpecErr::UnknownRecordKind(Lang::Java, str.to_string()))?,
+            None => Err(IntoSpecErr::MissingFact(FACT_SUBKIND)),
         }
     }
 }
 
 impl TryFrom<(Option<&str>, &Lang)> for RecordKind {
-    type Error = TranslationErr;
+    type Error = IntoSpecErr;
 
-    fn try_from((value, lang): (Option<&str>, &Lang)) -> Result<Self> {
+    fn try_from((value, lang): (Option<&str>, &Lang)) -> IntoSpecRes<Self> {
         match lang {
             Lang::Cpp => Ok(RecordKind::Cpp(CppRecordKind::try_from(value)?)),
             Lang::Java => Ok(RecordKind::Java(JavaRecordKind::try_from(value)?)),
-            Lang::Unspecified => Err(TranslationErr::MissingLang),
+            Lang::Unspecified => Err(IntoSpecErr::MissingLang),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum SumKind {
     Cpp(CppSumKind),
     Java(JavaSumKind),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum CppSumKind {
     Enum,
     EnumClass,
 }
 
 impl TryFrom<Option<&str>> for CppSumKind {
-    type Error = TranslationErr;
+    type Error = IntoSpecErr;
 
-    fn try_from(value: Option<&str>) -> Result<Self> {
+    fn try_from(value: Option<&str>) -> IntoSpecRes<Self> {
         match value {
             Some("enum") => Ok(CppSumKind::Enum),
             Some("enumClass") => Ok(CppSumKind::EnumClass),
-            Some(str) => Err(TranslationErr::UnknownSumKind(Lang::Cpp, str.to_string())),
-            None => Err(TranslationErr::MissingFact(FACT_SUBKIND)),
+            Some(str) => Err(IntoSpecErr::UnknownSumKind(Lang::Cpp, str.to_string())),
+            None => Err(IntoSpecErr::MissingFact(FACT_SUBKIND)),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum JavaSumKind {
     Enum,
 }
 
 impl TryFrom<Option<&str>> for JavaSumKind {
-    type Error = TranslationErr;
+    type Error = IntoSpecErr;
 
-    fn try_from(value: Option<&str>) -> Result<Self> {
+    fn try_from(value: Option<&str>) -> IntoSpecRes<Self> {
         match value {
             Some("enum") => Ok(JavaSumKind::Enum),
-            Some(str) => Err(TranslationErr::UnknownSumKind(Lang::Java, str.to_string())),
-            None => Err(TranslationErr::MissingFact(FACT_SUBKIND)),
+            Some(str) => Err(IntoSpecErr::UnknownSumKind(Lang::Java, str.to_string())),
+            None => Err(IntoSpecErr::MissingFact(FACT_SUBKIND)),
         }
     }
 }
 
 impl TryFrom<(Option<&str>, &Lang)> for SumKind {
-    type Error = TranslationErr;
+    type Error = IntoSpecErr;
 
-    fn try_from((value, lang): (Option<&str>, &Lang)) -> Result<Self> {
+    fn try_from((value, lang): (Option<&str>, &Lang)) -> IntoSpecRes<Self> {
         match lang {
             Lang::Cpp => Ok(SumKind::Cpp(CppSumKind::try_from(value)?)),
             Lang::Java => Ok(SumKind::Java(JavaSumKind::try_from(value)?)),
-            Lang::Unspecified => Err(TranslationErr::MissingLang)?,
+            Lang::Unspecified => Err(IntoSpecErr::MissingLang)?,
         }
     }
 }
 
-#[derive(Debug)]
+// TODO: No Clone ?
+#[derive(Clone, Debug)]
 pub enum NodeKind {
     Abs,
     Absvar,
@@ -462,9 +466,9 @@ pub enum NodeKind {
 }
 
 impl TryFrom<(RawNodeValue, &Lang)> for NodeKind {
-    type Error = TranslationErr;
+    type Error = IntoSpecErr;
 
-    fn try_from((value, lang): (RawNodeValue, &Lang)) -> Result<Self> {
+    fn try_from((value, lang): (RawNodeValue, &Lang)) -> IntoSpecRes<Self> {
         if value.is_none() {
             return Ok(NodeKind::None);
         }
@@ -501,8 +505,8 @@ impl TryFrom<(RawNodeValue, &Lang)> for NodeKind {
                 CompleteStatus::try_from(value.complete.as_deref())?,
                 VariableKind::try_from(value.subkind.as_deref())?,
             )),
-            Some(str) => Err(TranslationErr::UnknownNodeKind(str.to_string())),
-            None => Err(TranslationErr::MissingFact(FACT_NODE_KIND)),
+            Some(str) => Err(IntoSpecErr::UnknownNodeKind(str.to_string())),
+            None => Err(IntoSpecErr::MissingFact(FACT_NODE_KIND)),
         }
     }
 }
@@ -533,9 +537,9 @@ pub struct Node {
 }
 
 impl TryFrom<(NodeIndex, RawNodeValue, &Ticket)> for Node {
-    type Error = TranslationErr;
+    type Error = IntoSpecErr;
 
-    fn try_from((index, raw, ticket): (NodeIndex, RawNodeValue, &Ticket)) -> Result<Self> {
+    fn try_from((index, raw, ticket): (NodeIndex, RawNodeValue, &Ticket)) -> IntoSpecRes<Self> {
         let signature = ticket.signature.clone();
         let lang = Lang::try_from(ticket.language.as_deref())?;
         let file_key = FileKey::from(ticket);
@@ -547,6 +551,12 @@ impl TryFrom<(NodeIndex, RawNodeValue, &Ticket)> for Node {
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct NodeIndex(pub usize);
+
+impl Display for NodeIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct RawGraph {
@@ -568,19 +578,19 @@ impl RawGraph {
         }
     }
 
-    fn put_fact(&mut self, index: NodeIndex, name: String, value: String) -> Result<bool> {
+    fn put_fact(&mut self, index: NodeIndex, name: String, value: String) -> IntoSpecRes<bool> {
         self.nodes[index.0].set(&name, value)
     }
 
-    fn put_edge(&mut self, kind: String, src: NodeIndex, tgt: NodeIndex) -> Result<usize> {
+    fn put_edge(&mut self, kind: String, src: NodeIndex, tgt: NodeIndex) -> IntoSpecRes<usize> {
         Ok(self.edges.insert(EdgeKind::try_from(kind.as_str())?, src, tgt))
     }
 }
 
 impl TryFrom<EntryReader> for RawGraph {
-    type Error = TranslationErr;
+    type Error = IntoSpecErr;
 
-    fn try_from(reader: EntryReader) -> Result<Self> {
+    fn try_from(reader: EntryReader) -> IntoSpecRes<Self> {
         let mut graph = RawGraph::default();
 
         for entry in reader {
@@ -603,6 +613,32 @@ impl TryFrom<EntryReader> for RawGraph {
     }
 }
 
+pub enum NodeIndices {
+    None,
+    Sole(NodeIndex),
+    Many(Vec<NodeIndex>),
+}
+
+impl From<Vec<NodeIndex>> for NodeIndices {
+    fn from(indices: Vec<NodeIndex>) -> Self {
+        match indices.len() {
+            0 => NodeIndices::None,
+            1 => NodeIndices::Sole(indices[0]),
+            _ => NodeIndices::Many(indices),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ResolveAnchorErr {
+    NotAnchor,
+    NotExplicitAnchor,
+    FileNotFound,
+    OutOfBounds,
+}
+
+type ResolveAnchorRes<'a> = Result<&'a str, ResolveAnchorErr>;
+
 pub struct SpecGraph {
     nodes: Vec<Node>,
     files: HashMap<FileKey, NodeIndex>,
@@ -610,61 +646,50 @@ pub struct SpecGraph {
 }
 
 impl SpecGraph {
-    pub fn get_node(&self, index: &NodeIndex) -> Option<&Node> {
-        self.nodes.get(index.0)
+    pub fn get_node(&self, index: NodeIndex) -> &Node {
+        self.nodes.get(index.0).unwrap()
     }
 
-    #[allow(dead_code)]
-    pub fn get_file_bi(&self, index: &NodeIndex) -> Option<&NodeIndex> {
-        self.get_file_bn(self.get_node(index)?)
-    }
+    pub fn resolve_anchor(&self, node: &Node) -> ResolveAnchorRes {
+        let pos = match &node.kind {
+            NodeKind::Anchor(AnchorKind::Explicit(pos)) => pos,
+            NodeKind::Anchor(_) => Err(ResolveAnchorErr::NotExplicitAnchor)?,
+            _ => Err(ResolveAnchorErr::NotAnchor)?,
+        };
 
-    pub fn get_file_bn(&self, node: &Node) -> Option<&NodeIndex> {
-        self.files.get(&node.file_key)
-    }
+        let file_index = match self.files.get(&node.file_key) {
+            Some(file_index) => file_index,
+            None => Err(ResolveAnchorErr::FileNotFound)?,
+        };
 
-    pub fn get_name_bi(&self, index: &NodeIndex) -> Option<&str> {
-        self.get_name_bn(self.get_node(index)?)
-    }
+        let text = match &self.nodes[file_index.0].kind {
+            NodeKind::File(text) => text,
+            _ => unreachable!(),
+        };
 
-    pub fn get_name_bn(&self, node: &Node) -> Option<&str> {
-        if let NodeKind::Anchor(AnchorKind::Explicit(pos)) = &node.kind {
-            return self.get_text_bi(self.get_file_bn(node)?, pos);
-        }
-
-        self.get_name_bi(self.get_binding(&node.index)?)
-    }
-
-    pub fn get_text_bi(&self, index: &NodeIndex, pos: &Pos) -> Option<&str> {
-        self.get_text_bn(self.get_node(index)?, pos)
-    }
-
-    pub fn get_text_bn<'g, 'n>(&'g self, node: &'n Node, pos: &Pos) -> Option<&'n str> {
-        match &node.kind {
-            NodeKind::File(text) => Some(&text[pos.start..pos.end]),
-            _ => None,
+        match text.get(pos.start..pos.end) {
+            Some(str) => Ok(str),
+            None => Err(ResolveAnchorErr::OutOfBounds),
         }
     }
 
-    pub fn get_binding(&self, index: &NodeIndex) -> Option<&NodeIndex> {
-        let incoming = self.edges.incoming(&EdgeKind::DefinesBinding, &index);
-        incoming.at_most_one().ok().unwrap().map(|(i, _)| i)
-    }
-
-    pub fn get_parent(&self, index: &NodeIndex) -> Option<&NodeIndex> {
-        let incoming = self.edges.outgoing(&EdgeKind::Childof, &index);
-        incoming.at_most_one().ok().unwrap().map(|(i, _)| i)
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (&EdgeKind, &NodeIndex, &NodeIndex, &usize)> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (EdgeKind, NodeIndex, NodeIndex, usize)> + '_ {
         self.edges.iter()
+    }
+
+    pub fn incoming(&self, kind: EdgeKind, index: NodeIndex) -> NodeIndices {
+        self.edges.incoming(&kind, &index).map(|(i, _)| i).collect_vec().into()
+    }
+
+    pub fn outgoing(&self, kind: EdgeKind, index: NodeIndex) -> NodeIndices {
+        self.edges.outgoing(&kind, &index).map(|(i, _)| i).collect_vec().into()
     }
 }
 
 impl TryFrom<RawGraph> for SpecGraph {
-    type Error = TranslationErr;
+    type Error = IntoSpecErr;
 
-    fn try_from(raw_graph: RawGraph) -> Result<Self> {
+    fn try_from(raw_graph: RawGraph) -> IntoSpecRes<Self> {
         let edges = raw_graph.edges;
         let mut nodes = Vec::with_capacity(raw_graph.nodes.len());
         let mut files = HashMap::new();
@@ -673,7 +698,7 @@ impl TryFrom<RawGraph> for SpecGraph {
             let index = NodeIndex(i);
             let ticket = raw_graph.tickets.get_by_right(&index).unwrap();
             let node = Node::try_from((index, raw_node, ticket))
-                .map_err(|e| TranslationErr::SequencingErr(index, Box::new(e)))?;
+                .map_err(|e| IntoSpecErr::SequencingErr(index, Box::new(e)))?;
 
             if let NodeKind::File(_) = node.kind {
                 files.insert(node.file_key.clone(), index);
@@ -685,3 +710,134 @@ impl TryFrom<RawGraph> for SpecGraph {
         Ok(SpecGraph { nodes, files, edges })
     }
 }
+
+#[derive(Debug)]
+pub enum IntoEntityErr {
+    NoBindingFound,
+    ManyBindingsFound,
+    NoParentFound,
+    ManyParentsFound,
+    FileNotRoot,
+    InvalidBinding(ResolveAnchorErr),
+}
+
+type IntoEntityRes<T> = Result<T, IntoEntityErr>;
+
+#[derive(Debug)]
+pub struct Entity {
+    pub id: NodeIndex,
+    pub parent_id: Option<NodeIndex>,
+    pub name: String,
+    pub kind: NodeKind,
+}
+
+impl Entity {
+    fn new(graph: &SpecGraph, id: NodeIndex) -> IntoEntityRes<Self> {
+        let parent_id = match graph.outgoing(EdgeKind::Childof, id) {
+            NodeIndices::None => None,
+            NodeIndices::Sole(parent_id) => Some(parent_id),
+            NodeIndices::Many(_) => Err(IntoEntityErr::ManyParentsFound)?,
+        };
+
+        let kind = graph.get_node(id).kind.clone();
+
+        if parent_id.is_some() && matches!(kind, NodeKind::File(_)) {
+            return Err(IntoEntityErr::FileNotRoot);
+        }
+
+        let name = match graph.incoming(EdgeKind::DefinesBinding, id) {
+            NodeIndices::None => "???".to_string(),
+            NodeIndices::Sole(index) => match graph.resolve_anchor(graph.get_node(index)) {
+                Ok(name) => name.to_string(),
+                Err(err) => Err(IntoEntityErr::InvalidBinding(err))?,
+            },
+            NodeIndices::Many(_) => Err(IntoEntityErr::ManyBindingsFound)?,
+        };
+
+        Ok(Entity { id, parent_id, name, kind })
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Dep {
+    pub src: NodeIndex,
+    pub tgt: NodeIndex,
+    pub kind: EdgeKind,
+    pub count: usize,
+}
+
+#[derive(Debug)]
+pub struct EntityGraph {
+    pub entities: HashMap<NodeIndex, Entity>,
+    pub deps: Vec<Dep>,
+}
+
+fn ancestory(spec: &SpecGraph, id: NodeIndex) -> IntoEntityRes<Vec<NodeIndex>> {
+    let mut ancestory = match spec.outgoing(EdgeKind::Childof, id) {
+        NodeIndices::None => Vec::new(),
+        NodeIndices::Sole(parent_id) => ancestory(spec, parent_id)?,
+        NodeIndices::Many(_) => Err(IntoEntityErr::ManyParentsFound)?,
+    };
+
+    ancestory.push(id);
+    Ok(ancestory)
+}
+
+impl TryFrom<SpecGraph> for EntityGraph {
+    type Error = IntoEntityErr;
+
+    fn try_from(spec: SpecGraph) -> IntoEntityRes<Self> {
+        let mut deps: HashMap<(NodeIndex, NodeIndex, EdgeKind), Dep> = HashMap::new();
+        let mut ids = HashSet::new();
+
+        for (kind, src, tgt, count) in spec.iter() {
+            if !matches!(kind, EdgeKind::RefCall) {
+                continue;
+            }
+
+            let src = match spec.outgoing(EdgeKind::Childof, src) {
+                NodeIndices::None => Err(IntoEntityErr::NoParentFound)?,
+                NodeIndices::Sole(parent) => parent,
+                NodeIndices::Many(_) => Err(IntoEntityErr::ManyParentsFound)?,
+            };
+
+            let dep = deps.entry((src, tgt, kind)).or_insert(Dep { src, tgt, kind, count: 0 });
+            dep.count += count;
+
+            ids.extend(ancestory(&spec, src)?);
+            ids.extend(ancestory(&spec, tgt)?);
+        }
+
+        for (kind, src, tgt, count) in spec.iter() {
+            if !matches!(kind, EdgeKind::Childof) {
+                continue;
+            }
+
+            if !ids.contains(&src) ||  !ids.contains(&tgt) {
+                continue;
+            }
+
+            let dep = deps.entry((src, tgt, kind)).or_insert(Dep { src, tgt, kind, count: 0 });
+            dep.count += count;
+        }
+
+        let deps = deps.into_values().collect_vec();
+        let ids = deps.iter().flat_map(|d| [d.src, d.tgt]).collect::<HashSet<NodeIndex>>();
+        let mut entities = HashMap::new();
+
+        for id in ids {
+            entities.insert(id, Entity::new(&spec, id)?);
+        }
+
+        Ok(EntityGraph { entities, deps })
+    }
+}
+
+//  - Iterate through all "call" edges
+//      - Ensure callee is function
+//      - Ensure caller is anchor
+//      - Get outgoing "childof" edge of caller
+//      - Ensure other endpoint is a function
+//      - Replace original caller with this function
+//      - Return a new edge with this source and target
+//  -
