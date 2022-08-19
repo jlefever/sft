@@ -3,7 +3,7 @@ mod collections;
 mod commands;
 mod dv8;
 mod io;
-mod kythe;
+mod ir;
 
 use clap::{Parser, Subcommand};
 use commands::CliCommand;

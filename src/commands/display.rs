@@ -3,10 +3,10 @@ use dot_writer::DotWriter;
 
 use crate::io::EntryReader;
 use crate::io::Writer;
-use crate::kythe::EdgeKind;
-use crate::kythe::NodeIndex;
-use crate::kythe::RawKGraph;
-use crate::kythe::KGraph;
+use crate::ir::EdgeKind;
+use crate::ir::NodeIndex;
+use crate::ir::RawKGraph;
+use crate::ir::KGraph;
 
 use std::collections::HashSet;
 use std::path::PathBuf;

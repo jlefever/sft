@@ -653,11 +653,11 @@ impl TryFrom<(NodeIndex, RawNodeValue, &Ticket)> for Node {
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct NodeIndex(pub usize);
 
-impl From<&NodeIndex> for usize {
-    fn from(value: &NodeIndex) -> Self {
-        value.0
-    }
-}
+// impl From<&NodeIndex> for usize {
+//     fn from(value: &NodeIndex) -> Self {
+//         value.0
+//     }
+// }
 
 #[derive(Debug, Default)]
 pub struct RawKGraph {
