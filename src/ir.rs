@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::Hash;
 
@@ -30,7 +30,7 @@ pub enum IntoSpecErr {
 
 type IntoSpecRes<T> = Result<T, IntoSpecErr>;
 
-#[derive(Clone, Copy, Default, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize)]
 pub enum EdgeKind {
     Aliases,
     AliasesRoot,
@@ -187,10 +187,10 @@ impl RawNodeValue {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub struct Pos {
-    start: usize,
-    end: usize,
+    pub start: usize,
+    pub end: usize,
 }
 
 impl TryFrom<&RawNodeValue> for Pos {
@@ -214,7 +214,7 @@ impl TryFrom<&RawNodeValue> for Pos {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub enum AnchorKind {
     Explicit(Pos),
     Implicit,
@@ -232,7 +232,7 @@ impl TryFrom<&RawNodeValue> for AnchorKind {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub enum CompleteStatus {
     Incomplete,
     Complete,
@@ -253,7 +253,7 @@ impl TryFrom<Option<&str>> for CompleteStatus {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub enum VariableKind {
     Local,
     LocalException,
@@ -281,7 +281,7 @@ impl TryFrom<Option<&str>> for VariableKind {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub enum FunctionKind {
     Constructor,
     Destructor,
@@ -303,7 +303,7 @@ impl TryFrom<Option<&str>> for FunctionKind {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub enum Lang {
     Cpp,
     Java,
@@ -323,13 +323,13 @@ impl TryFrom<Option<&str>> for Lang {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub enum RecordKind {
     Cpp(CppRecordKind),
     Java(JavaRecordKind),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub enum CppRecordKind {
     Class,
     Struct,
@@ -350,7 +350,7 @@ impl TryFrom<Option<&str>> for CppRecordKind {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub enum JavaRecordKind {
     Class,
 }
@@ -379,13 +379,13 @@ impl TryFrom<(Option<&str>, &Lang)> for RecordKind {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub enum SumKind {
     Cpp(CppSumKind),
     Java(JavaSumKind),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub enum CppSumKind {
     Enum,
     EnumClass,
@@ -404,7 +404,7 @@ impl TryFrom<Option<&str>> for CppSumKind {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub enum JavaSumKind {
     Enum,
 }
@@ -434,7 +434,8 @@ impl TryFrom<(Option<&str>, &Lang)> for SumKind {
 }
 
 // TODO: No Clone ?
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+#[serde(tag = "kind", content = "extra")]
 pub enum NodeKind {
     Abs,
     Absvar,
@@ -511,7 +512,7 @@ impl TryFrom<(RawNodeValue, &Lang)> for NodeKind {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize)]
 pub struct FileKey {
     pub corpus: Option<String>,
     pub path: Option<String>,
@@ -528,6 +529,7 @@ impl From<&Ticket> for FileKey {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub struct Node {
     pub index: NodeIndex,
     pub signature: Option<String>,
@@ -549,7 +551,7 @@ impl TryFrom<(NodeIndex, RawNodeValue, &Ticket)> for Node {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize)]
 pub struct NodeIndex(pub usize);
 
 impl Display for NodeIndex {
@@ -629,6 +631,16 @@ impl From<Vec<NodeIndex>> for NodeIndices {
     }
 }
 
+impl From<NodeIndices> for Vec<NodeIndex> {
+    fn from(indices: NodeIndices) -> Self {
+        match indices {
+            NodeIndices::None => vec![],
+            NodeIndices::Sole(index) => vec![index],
+            NodeIndices::Many(indices) => indices,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum ResolveAnchorErr {
     NotAnchor,
@@ -673,8 +685,20 @@ impl SpecGraph {
         }
     }
 
+    pub fn get_file_text(&self, file_key: &FileKey) -> Option<&String> {
+        let file_index = self.files.get(file_key)?;
+        match &self.nodes[file_index.0].kind {
+            NodeKind::File(text) => Some(text),
+            _ => None,
+        }
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (EdgeKind, NodeIndex, NodeIndex, usize)> + '_ {
         self.edges.iter()
+    }
+
+    pub fn iter_nodes(&self) -> impl Iterator<Item = &Node> + '_ {
+        self.nodes.iter()
     }
 
     pub fn incoming(&self, kind: EdgeKind, index: NodeIndex) -> NodeIndices {
@@ -707,6 +731,8 @@ impl TryFrom<RawGraph> for SpecGraph {
             nodes.push(node);
         }
 
+        // log::trace!("{}", serde_json::to_string_pretty(&nodes).unwrap());
+
         Ok(SpecGraph { nodes, files, edges })
     }
 }
@@ -723,47 +749,54 @@ pub enum IntoEntityErr {
 
 type IntoEntityRes<T> = Result<T, IntoEntityErr>;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub struct Entity {
     pub id: NodeIndex,
-    pub parent_id: Option<NodeIndex>,
+    pub parent_ids: Vec<NodeIndex>,
     pub name: String,
+    pub path: String,
+
+    #[serde(flatten)]
     pub kind: NodeKind,
 }
 
 impl Entity {
     fn new(graph: &SpecGraph, id: NodeIndex) -> IntoEntityRes<Self> {
-        let parent_id = match graph.outgoing(EdgeKind::Childof, id) {
-            NodeIndices::None => None,
-            NodeIndices::Sole(parent_id) => Some(parent_id),
-            NodeIndices::Many(_) => Err(IntoEntityErr::ManyParentsFound)?,
+        let parent_ids = graph.outgoing(EdgeKind::Childof, id).into();
+        let node = graph.get_node(id);
+        let kind = node.kind.clone();
+        let path = node.file_key.path.as_ref().unwrap().clone();
+
+        if let Ok(name) = graph.resolve_anchor(node) {
+            return Ok(Entity { id, parent_ids, name: name.to_string(), path, kind });
         };
-
-        let kind = graph.get_node(id).kind.clone();
-
-        if parent_id.is_some() && matches!(kind, NodeKind::File(_)) {
-            return Err(IntoEntityErr::FileNotRoot);
-        }
 
         let name = match graph.incoming(EdgeKind::DefinesBinding, id) {
             NodeIndices::None => "???".to_string(),
             NodeIndices::Sole(index) => match graph.resolve_anchor(graph.get_node(index)) {
                 Ok(name) => name.to_string(),
+                Err(ResolveAnchorErr::NotExplicitAnchor) => "?imp?".to_string(),
                 Err(err) => Err(IntoEntityErr::InvalidBinding(err))?,
             },
             NodeIndices::Many(_) => Err(IntoEntityErr::ManyBindingsFound)?,
         };
 
-        Ok(Entity { id, parent_id, name, kind })
+        Ok(Entity { id, parent_ids, name, path, kind })
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub struct Dep {
     pub src: NodeIndex,
     pub tgt: NodeIndex,
     pub kind: EdgeKind,
     pub count: usize,
+}
+
+impl Dep {
+    fn new(src: NodeIndex, tgt: NodeIndex, kind: EdgeKind, count: usize) -> Self {
+        Dep { src, tgt, kind, count }
+    }
 }
 
 #[derive(Debug)]
@@ -772,6 +805,7 @@ pub struct EntityGraph {
     pub deps: Vec<Dep>,
 }
 
+#[allow(dead_code)]
 fn ancestory(spec: &SpecGraph, id: NodeIndex) -> IntoEntityRes<Vec<NodeIndex>> {
     let mut ancestory = match spec.outgoing(EdgeKind::Childof, id) {
         NodeIndices::None => Vec::new(),
@@ -787,57 +821,17 @@ impl TryFrom<SpecGraph> for EntityGraph {
     type Error = IntoEntityErr;
 
     fn try_from(spec: SpecGraph) -> IntoEntityRes<Self> {
-        let mut deps: HashMap<(NodeIndex, NodeIndex, EdgeKind), Dep> = HashMap::new();
-        let mut ids = HashSet::new();
-
-        for (kind, src, tgt, count) in spec.iter() {
-            if !matches!(kind, EdgeKind::RefCall) {
-                continue;
-            }
-
-            let src = match spec.outgoing(EdgeKind::Childof, src) {
-                NodeIndices::None => Err(IntoEntityErr::NoParentFound)?,
-                NodeIndices::Sole(parent) => parent,
-                NodeIndices::Many(_) => Err(IntoEntityErr::ManyParentsFound)?,
-            };
-
-            let dep = deps.entry((src, tgt, kind)).or_insert(Dep { src, tgt, kind, count: 0 });
-            dep.count += count;
-
-            ids.extend(ancestory(&spec, src)?);
-            ids.extend(ancestory(&spec, tgt)?);
-        }
-
-        for (kind, src, tgt, count) in spec.iter() {
-            if !matches!(kind, EdgeKind::Childof) {
-                continue;
-            }
-
-            if !ids.contains(&src) ||  !ids.contains(&tgt) {
-                continue;
-            }
-
-            let dep = deps.entry((src, tgt, kind)).or_insert(Dep { src, tgt, kind, count: 0 });
-            dep.count += count;
-        }
-
-        let deps = deps.into_values().collect_vec();
-        let ids = deps.iter().flat_map(|d| [d.src, d.tgt]).collect::<HashSet<NodeIndex>>();
         let mut entities = HashMap::new();
 
-        for id in ids {
-            entities.insert(id, Entity::new(&spec, id)?);
+        for node in spec.iter_nodes() {
+            entities.insert(node.index, Entity::new(&spec, node.index)?);
         }
+
+        let deps = spec
+            .iter()
+            .map(|(kind, src, tgt, count)| Dep::new(src, tgt, kind, count))
+            .collect_vec();
 
         Ok(EntityGraph { entities, deps })
     }
 }
-
-//  - Iterate through all "call" edges
-//      - Ensure callee is function
-//      - Ensure caller is anchor
-//      - Get outgoing "childof" edge of caller
-//      - Ensure other endpoint is a function
-//      - Replace original caller with this function
-//      - Return a new edge with this source and target
-//  -

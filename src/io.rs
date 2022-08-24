@@ -1,3 +1,4 @@
+use std::fmt::Arguments;
 use std::fs;
 use std::io;
 
@@ -16,6 +17,10 @@ impl Writer {
 
     pub fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         io::Write::write(&mut self.0, buf)
+    }
+
+    pub fn write_fmt(&mut self, fmt: Arguments) -> io::Result<()> {
+        io::Write::write_fmt(&mut self.0, fmt)
     }
 }
 
