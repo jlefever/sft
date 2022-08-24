@@ -5,6 +5,7 @@ use crate::io::Writer;
 
 use log;
 use std::collections::HashSet;
+use std::error::Error;
 use std::fmt::Debug;
 use std::fs;
 
@@ -335,10 +336,10 @@ pub struct CliExcludeCommand {
 }
 
 impl CliCommand for CliExcludeCommand {
-    fn execute(&self) {
+    fn execute(&self) -> Result<(), Box<dyn Error>> {
         let input = self.input.as_ref().map(PathBuf::as_path);
         let output = self.output.as_ref().map(PathBuf::as_path);
-        let mut writer = Writer::open(output).unwrap();
+        let mut writer = Writer::open(output)?;
 
         let mut rules: Vec<Box<dyn Exclusion>> = Vec::new();
 
@@ -380,7 +381,7 @@ impl CliCommand for CliExcludeCommand {
         push_path_kind_exclusion(relpath_kind, PathKind::RelPathed);
 
         if let Some(pattern) = &self.by_path {
-            let matcher = globset::Glob::new(pattern).unwrap().compile_matcher();
+            let matcher = globset::Glob::new(pattern)?.compile_matcher();
             let ticket_rule = Box::new(PathPatternBasedExclusion::new(matcher));
             let rule =
                 TickedBasedExclusion::new(EdgeExclusionKind::Any, ticket_rule, self.keep_nodes);
@@ -414,7 +415,7 @@ impl CliCommand for CliExcludeCommand {
         let mut num_lines = 0u128;
         let mut num_excluded = 0u128;
 
-        'outer: for (line, entry) in EntryLineReader::open(input).unwrap() {
+        'outer: for (line, entry) in EntryLineReader::open(input)? {
             num_lines = num_lines + 1;
 
             for rule in &rules {
@@ -424,7 +425,7 @@ impl CliCommand for CliExcludeCommand {
                 }
             }
 
-            writer.write(line.as_bytes()).unwrap();
+            writer.write(line.as_bytes())?;
         }
 
         log::info!(
@@ -433,6 +434,8 @@ impl CliCommand for CliExcludeCommand {
             num_lines,
             start.elapsed().as_secs_f32()
         );
+
+        Ok(())
     }
 }
 

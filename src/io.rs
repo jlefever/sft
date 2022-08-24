@@ -116,7 +116,7 @@ impl Iterator for EntryLineIter {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Ticket {
     pub corpus: Option<String>,
     pub language: Option<String>,

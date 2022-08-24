@@ -1,31 +1,48 @@
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::Hash;
+use std::num::ParseIntError;
 
 use bimap::BiHashMap;
 use itertools::Itertools;
 
 use std::result::Result;
 
+use thiserror::Error;
+
 use crate::collections::KindedEdgeBag;
 use crate::io::{Entry, EntryReader, Ticket};
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum IntoSpecErr {
+    #[error("found unknown subkind for anchor, \"{0}\"")]
     UnknownAnchorKind(String),
-    UnknownEdgeKind(String),
-    UnknownFactName(String),
+    #[error("found unknown subkind for function, \"{0}\"")]
     UnknownFunctionKind(String),
+    #[error("found unknown subkind for a {0} record type, \"{1}\"")]
     UnknownRecordKind(Lang, String),
+    #[error("found unknown subkind for a {0} sum type, \"{1}\"")]
     UnknownSumKind(Lang, String),
+    #[error("found unknown subkind for variable, \"{0}\"")]
     UnknownVariableKind(String),
+    #[error("found unknown complete, \"{0}\"")]
     UnknownComplete(String),
+    #[error("found unknown node kind, \"{0}\"")]
     UnknownNodeKind(String),
+    #[error("found unknown language, \"{0}\"")]
     UnknownLang(String),
+    #[error("found unknown fact name, \"{0}\"")]
+    UnknownFactName(String),
+    #[error("found unknown edge kind, \"{0}\"")]
+    UnknownEdgeKind(String),
+    #[error("expected fact \"{0}\" for this node kind")]
     MissingFact(&'static str),
+    #[error("language not specified")]
     MissingLang,
-    ExpectedInt,
-    SequencingErr(NodeIndex, Box<IntoSpecErr>),
+    #[error("failed to parse int")]
+    ExpectedInt(#[from] ParseIntError),
+    #[error("failed to add node with ticket {0:?} and raw values {1:?}")]
+    GraphBuildFailed(Ticket, RawNodeValue, #[source] Box<IntoSpecErr>),
 }
 
 type IntoSpecRes<T> = Result<T, IntoSpecErr>;
@@ -115,15 +132,13 @@ impl TryFrom<&str> for EdgeKind {
             "/kythe/edge/undefines" => EdgeKind::Undefines,
             _ => match value.strip_prefix("/kythe/edge/param.") {
                 None => Err(IntoSpecErr::UnknownEdgeKind(value.to_string()))?,
-                Some(num) => {
-                    EdgeKind::Param(num.parse::<u8>().map_err(|_| IntoSpecErr::ExpectedInt)?)
-                }
+                Some(num) => EdgeKind::Param(num.parse::<u8>().map_err(IntoSpecErr::ExpectedInt)?),
             },
         })
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct RawNodeValue {
     code: Option<String>,
     complete: Option<String>,
@@ -187,7 +202,7 @@ impl RawNodeValue {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub struct Pos {
     pub start: usize,
     pub end: usize,
@@ -202,13 +217,13 @@ impl TryFrom<&RawNodeValue> for Pos {
             .as_deref()
             .ok_or(IntoSpecErr::MissingFact(FACT_LOC_START))?
             .parse::<usize>()
-            .map_err(|_| IntoSpecErr::ExpectedInt)?;
+            .map_err(IntoSpecErr::ExpectedInt)?;
         let end = value
             .loc_end
             .as_deref()
             .ok_or(IntoSpecErr::MissingFact(FACT_LOC_END))?
             .parse::<usize>()
-            .map_err(|_| IntoSpecErr::ExpectedInt)?;
+            .map_err(IntoSpecErr::ExpectedInt)?;
 
         Ok(Pos { start, end })
     }
@@ -319,6 +334,16 @@ impl TryFrom<Option<&str>> for Lang {
             Some("java") => Ok(Lang::Java),
             Some(str) => Err(IntoSpecErr::UnknownLang(str.to_string())),
             None => Ok(Lang::Unspecified),
+        }
+    }
+}
+
+impl Display for Lang {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Lang::Cpp => write!(f, "c++"),
+            Lang::Java => write!(f, "java"),
+            Lang::Unspecified => write!(f, "unspecified"),
         }
     }
 }
@@ -641,11 +666,15 @@ impl From<NodeIndices> for Vec<NodeIndex> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum ResolveAnchorErr {
+    #[error("not an anchor")]
     NotAnchor,
+    #[error("not an explicit anchor")]
     NotExplicitAnchor,
+    #[error("could not find the file that this anchor belongs to")]
     FileNotFound,
+    #[error("anchor refers to out of bounds bytes")]
     OutOfBounds,
 }
 
@@ -721,8 +750,10 @@ impl TryFrom<RawGraph> for SpecGraph {
         for (i, raw_node) in raw_graph.nodes.into_iter().enumerate() {
             let index = NodeIndex(i);
             let ticket = raw_graph.tickets.get_by_right(&index).unwrap();
-            let node = Node::try_from((index, raw_node, ticket))
-                .map_err(|e| IntoSpecErr::SequencingErr(index, Box::new(e)))?;
+            let duplicate = raw_node.clone();
+            let node = Node::try_from((index, raw_node, ticket)).map_err(|e| {
+                IntoSpecErr::GraphBuildFailed(ticket.clone(), duplicate, Box::new(e))
+            })?;
 
             if let NodeKind::File(_) = node.kind {
                 files.insert(node.file_key.clone(), index);
@@ -731,20 +762,20 @@ impl TryFrom<RawGraph> for SpecGraph {
             nodes.push(node);
         }
 
-        // log::trace!("{}", serde_json::to_string_pretty(&nodes).unwrap());
-
         Ok(SpecGraph { nodes, files, edges })
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum IntoEntityErr {
-    NoBindingFound,
+    // NoBindingFound,
+    #[error("found more than one binding for this node")]
     ManyBindingsFound,
-    NoParentFound,
-    ManyParentsFound,
-    FileNotRoot,
-    InvalidBinding(ResolveAnchorErr),
+    // NoParentFound,
+    // ManyParentsFound,
+    // FileNotRoot,
+    #[error("failed to resolve anchor")]
+    InvalidBinding(#[from] ResolveAnchorErr),
 }
 
 type IntoEntityRes<T> = Result<T, IntoEntityErr>;
@@ -810,7 +841,7 @@ fn ancestory(spec: &SpecGraph, id: NodeIndex) -> IntoEntityRes<Vec<NodeIndex>> {
     let mut ancestory = match spec.outgoing(EdgeKind::Childof, id) {
         NodeIndices::None => Vec::new(),
         NodeIndices::Sole(parent_id) => ancestory(spec, parent_id)?,
-        NodeIndices::Many(_) => Err(IntoEntityErr::ManyParentsFound)?,
+        NodeIndices::Many(_) => panic!(),
     };
 
     ancestory.push(id);

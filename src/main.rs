@@ -28,11 +28,12 @@ enum CliSubCommand {
     Display(commands::display::CliDisplayCommand),
     Exclude(commands::exclude::CliExcludeCommand),
     // Dsm(commands::dsm::CliDsmCommand),
-    List(commands::list::CliListCommand),
+    Summarize(commands::summarize::CliSummarizeCommand),
     Format(commands::format::CliFormatCommand),
+    Html(commands::html::CliHtmlCommand),
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     let verbosity = match cli.verbose {
@@ -54,8 +55,9 @@ fn main() {
             CliSubCommand::Exclude(com) => com.execute(),
             CliSubCommand::Display(com) => com.execute(),
             // CliSubCommand::Dsm(com) => com.execute(),
-            CliSubCommand::List(com) => com.execute(),
+            CliSubCommand::Summarize(com) => com.execute(),
             CliSubCommand::Format(com) => com.execute(),
+            CliSubCommand::Html(com) => com.execute(),
         },
     }
 }
