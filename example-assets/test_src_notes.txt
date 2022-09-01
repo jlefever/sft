@@ -1,0 +1,126 @@
+            Source Kind            |     Edge Kind     |            Target Kind            | n(1) | n(2) | n(3) | n(4) | n(5+) 
+-----------------------------------+-------------------+-----------------------------------+------+------+------+------+-------
+                Abs                |    Param(...)     |              Absvar               |  0   |  1   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |      Childof      | Function(Definition, Constructor) |  18  |  12  |  0   |  0   |   0   
+       Anchor(Explicit(...))       |      Childof      | Function(Definition, Destructor)  |  2   |  0   |  0   |  0   |   0   
+       Anchor(Explicit(...))       |      Childof      | Function(Definition, Unspecified) | 298  | 153  |  0   |  0   |   0   
+       Anchor(Explicit(...))       |  ChildofContext   |  Record(Definition, Cpp(Class))   |  73  |  0   |  0   |  0   |   0   
+       Anchor(Explicit(...))       |     Completes     | Function(Incomplete, Constructor) |  1   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |     Completes     | Function(Incomplete, Destructor)  |  1   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |     Completes     | Function(Incomplete, Unspecified) |  5   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |     Completes     |  Record(Incomplete, Cpp(Class))   |  1   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       | CompletesUniquely | Function(Incomplete, Constructor) |  2   |  0   |  0   |  0   |   0   
+       Anchor(Explicit(...))       | CompletesUniquely | Function(Incomplete, Unspecified) |  15  |  0   |  0   |  0   |   0   
+       Anchor(Explicit(...))       | CompletesUniquely |  Record(Incomplete, Cpp(Struct))  |  1   |  0   |  0   |  0   |   0   
+       Anchor(Explicit(...))       |      Defines      | Function(Definition, Constructor) |  12  |  0   |  0   |  0   |   0   [Ignore]
+       Anchor(Explicit(...))       |      Defines      | Function(Definition, Destructor)  |  2   |  0   |  0   |  0   |   0   [Ignore]
+       Anchor(Explicit(...))       |      Defines      | Function(Definition, Unspecified) |  80  |  0   |  0   |  0   |   0   [Ignore]
+       Anchor(Explicit(...))       |  DefinesBinding   |                Abs                |  1   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |  DefinesBinding   |              Absvar               |  2   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |  DefinesBinding   |           Constant(...)           |  3   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |  DefinesBinding   | Function(Definition, Constructor) |  27  |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |  DefinesBinding   | Function(Definition, Destructor)  |  8   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |  DefinesBinding   | Function(Definition, Unspecified) |  91  |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |  DefinesBinding   | Function(Incomplete, Constructor) |  4   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |  DefinesBinding   | Function(Incomplete, Destructor)  |  1   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |  DefinesBinding   | Function(Incomplete, Unspecified) |  30  |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |  DefinesBinding   |               Macro               |  2   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |  DefinesBinding   |  Record(Definition, Cpp(Class))   |  7   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |  DefinesBinding   |  Record(Definition, Cpp(Struct))  |  4   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |  DefinesBinding   |  Record(Incomplete, Cpp(Class))   |  3   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |  DefinesBinding   |  Record(Incomplete, Cpp(Struct))  |  2   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |  DefinesBinding   |    Sum(Definition, Cpp(Enum))     |  3   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |  DefinesBinding   |    Variable(Definition, Field)    |  34  |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |  DefinesBinding   | Variable(Definition, Unspecified) | 165  |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |  DefinesBinding   | Variable(Incomplete, Unspecified) |  36  |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |     Documents     |             File(...)             |  3   |  0   |  0   |  0   |   0   [Ignore]
+       Anchor(Explicit(...))       |     Documents     | Function(Definition, Unspecified) |  5   |  0   |  0   |  0   |   0   [Ignore]
+       Anchor(Explicit(...))       |     Documents     | Function(Incomplete, Constructor) |  3   |  0   |  0   |  0   |   0   [Ignore]
+       Anchor(Explicit(...))       |     Documents     | Function(Incomplete, Unspecified) |  17  |  0   |  0   |  0   |   0   [Ignore]
+       Anchor(Explicit(...))       |     Documents     |  Record(Definition, Cpp(Class))   |  1   |  0   |  0   |  0   |   0   [Ignore]
+       Anchor(Explicit(...))       |     Documents     |  Record(Definition, Cpp(Struct))  |  1   |  0   |  0   |  0   |   0   [Ignore]
+       Anchor(Explicit(...))       |     Documents     |    Variable(Definition, Field)    |  6   |  0   |  0   |  0   |   0   [Ignore]
+       Anchor(Explicit(...))       |     Documents     | Variable(Definition, Unspecified) |  6   |  0   |  0   |  0   |   0   [Ignore]
+       Anchor(Explicit(...))       |        Ref        |                Abs                |  7   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |        Ref        |              Absvar               |  12  |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |        Ref        |           Constant(...)           |  5   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |        Ref        | Function(Definition, Constructor) |  3   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |        Ref        | Function(Definition, Unspecified) |  23  |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |        Ref        |               None                |  76  |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |        Ref        |  Record(Definition, Cpp(Class))   |  27  |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |        Ref        |  Record(Definition, Cpp(Struct))  |  34  |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |        Ref        |  Record(Incomplete, Cpp(Class))   |  1   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |        Ref        |    Variable(Definition, Field)    |  63  |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |        Ref        | Variable(Definition, Unspecified) | 171  |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |      RefCall      | Function(Definition, Constructor) |  3   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |      RefCall      | Function(Definition, Destructor)  |  1   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |      RefCall      | Function(Definition, Unspecified) |  23  |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |      RefCall      | Function(Incomplete, Destructor)  |  1   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |      RefCall      |    Variable(Definition, Field)    |  4   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |  RefCallImplicit  | Function(Definition, Constructor) |  1   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |  RefCallImplicit  | Function(Definition, Unspecified) |  4   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |      RefDoc       | Variable(Definition, Unspecified) |  1   |  0   |  0   |  0   |   0   [Ignore]
+       Anchor(Explicit(...))       |       RefId       |                Abs                |  3   |  0   |  0   |  0   |   0   [Ignore]
+       Anchor(Explicit(...))       |       RefId       |  Record(Definition, Cpp(Class))   |  11  |  0   |  0   |  0   |   0   [Ignore]
+       Anchor(Explicit(...))       |       RefId       |  Record(Definition, Cpp(Struct))  |  2   |  0   |  0   |  0   |   0   [Ignore]
+       Anchor(Explicit(...))       |    RefImplicit    |           Constant(...)           |  0   |  5   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |    RefImplicit    | Function(Definition, Constructor) |  1   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |    RefImplicit    | Function(Definition, Unspecified) |  4   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |    RefImplicit    |  Record(Definition, Cpp(Class))   |  9   |  17  |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |    RefImplicit    |  Record(Definition, Cpp(Struct))  |  25  |  22  |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |    RefImplicit    |  Record(Incomplete, Cpp(Struct))  |  7   |  0   |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |    RefImplicit    |    Variable(Definition, Field)    |  1   |  48  |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |    RefImplicit    | Variable(Definition, Unspecified) |  4   |  93  |  0   |  0   |   0   [Use]
+       Anchor(Explicit(...))       |    RefIncludes    |             File(...)             |  2   |  0   |  0   |  0   |   0   
+       Anchor(Explicit(...))       |     RefWrites     |    Variable(Definition, Field)    |  11  |  0   |  0   |  0   |   0   
+       Anchor(Explicit(...))       | RefWritesImplicit |    Variable(Definition, Field)    |  0   |  6   |  0   |  0   |   0   
+         Anchor(Implicit)          |      Childof      | Function(Definition, Constructor) |  2   |  0   |  0   |  0   |   0   
+         Anchor(Implicit)          |  DefinesBinding   | Variable(Definition, Unspecified) |  16  |  0   |  0   |  0   |   0   
+         Anchor(Implicit)          |    RefImplicit    |    Variable(Definition, Field)    |  1   |  0   |  0   |  0   |   0   
+         Anchor(Implicit)          |    RefImplicit    | Variable(Definition, Unspecified) |  1   |  0   |  0   |  0   |   0   
+           Constant(...)           |      Childof      |    Sum(Definition, Cpp(Enum))     |  3   |  0   |  0   |  0   |   0   
+             Doc(...)              |     Documents     |             File(...)             |  3   |  0   |  0   |  0   |   0   [Ignore]
+             Doc(...)              |     Documents     | Function(Definition, Unspecified) |  5   |  0   |  0   |  0   |   0   [Ignore]
+             Doc(...)              |     Documents     | Function(Incomplete, Constructor) |  3   |  0   |  0   |  0   |   0   [Ignore]
+             Doc(...)              |     Documents     | Function(Incomplete, Unspecified) |  17  |  0   |  0   |  0   |   0   [Ignore]
+             Doc(...)              |     Documents     |  Record(Definition, Cpp(Class))   |  1   |  0   |  0   |  0   |   0   [Ignore]
+             Doc(...)              |     Documents     |  Record(Definition, Cpp(Struct))  |  1   |  0   |  0   |  0   |   0   [Ignore]
+             Doc(...)              |     Documents     |    Variable(Definition, Field)    |  6   |  0   |  0   |  0   |   0   [Ignore]
+             Doc(...)              |     Documents     | Variable(Definition, Unspecified) |  6   |  0   |  0   |  0   |   0   [Ignore]
+             Doc(...)              |    Param(...)     | Variable(Definition, Unspecified) |  1   |  0   |  0   |  0   |   0   [Use]
+ Function(Definition, Constructor) |      Childof      |  Record(Definition, Cpp(Class))   |  17  |  0   |  0   |  0   |   0   
+ Function(Definition, Constructor) |      Childof      |  Record(Definition, Cpp(Struct))  |  10  |  0   |  0   |  0   |   0   
+ Function(Definition, Constructor) |    Param(...)     | Variable(Definition, Unspecified) |  24  |  3   |  0   |  0   |   0   [Use]
+ Function(Definition, Destructor)  |      Childof      |  Record(Definition, Cpp(Class))   |  5   |  0   |  0   |  0   |   0   
+ Function(Definition, Destructor)  |      Childof      |  Record(Definition, Cpp(Struct))  |  3   |  0   |  0   |  0   |   0   
+ Function(Definition, Unspecified) |      Childof      |  Record(Definition, Cpp(Class))   |  70  |  0   |  0   |  0   |   0   
+ Function(Definition, Unspecified) |      Childof      |  Record(Definition, Cpp(Struct))  |  19  |  0   |  0   |  0   |   0   
+ Function(Definition, Unspecified) |    Param(...)     | Variable(Definition, Unspecified) |  30  |  20  |  1   |  1   |   0   [Use]
+ Function(Incomplete, Constructor) |      Childof      |  Record(Definition, Cpp(Class))   |  4   |  0   |  0   |  0   |   0   
+ Function(Incomplete, Constructor) |    Completedby    | Function(Definition, Constructor) |  3   |  0   |  0   |  0   |   0   [Use]
+ Function(Incomplete, Constructor) |    Param(...)     | Variable(Incomplete, Unspecified) |  2   |  2   |  0   |  0   |   0   [Use]
+ Function(Incomplete, Destructor)  |      Childof      |  Record(Definition, Cpp(Class))   |  1   |  0   |  0   |  0   |   0   
+ Function(Incomplete, Destructor)  |    Completedby    | Function(Definition, Destructor)  |  1   |  0   |  0   |  0   |   0   [Use]
+ Function(Incomplete, Unspecified) |      Childof      |  Record(Definition, Cpp(Class))   |  29  |  0   |  0   |  0   |   0   
+ Function(Incomplete, Unspecified) |      Childof      |  Record(Definition, Cpp(Struct))  |  1   |  0   |  0   |  0   |   0   
+ Function(Incomplete, Unspecified) |    Completedby    | Function(Definition, Unspecified) |  20  |  0   |  0   |  0   |   0   [Use]
+ Function(Incomplete, Unspecified) |    Param(...)     | Variable(Incomplete, Unspecified) |  7   |  8   |  1   |  1   |   0   [Use]
+  Record(Definition, Cpp(Class))   |      Childof      |                Abs                |  1   |  0   |  0   |  0   |   0   
+  Record(Definition, Cpp(Class))   |      Childof      |  Record(Definition, Cpp(Class))   |  3   |  0   |  0   |  0   |   0   
+  Record(Definition, Cpp(Struct))  |      Childof      |  Record(Definition, Cpp(Class))   |  4   |  0   |  0   |  0   |   0   
+  Record(Incomplete, Cpp(Class))   |      Childof      |  Record(Definition, Cpp(Class))   |  1   |  0   |  0   |  0   |   0   
+  Record(Incomplete, Cpp(Class))   |    Completedby    |  Record(Definition, Cpp(Class))   |  1   |  0   |  0   |  0   |   0   [Use]
+  Record(Incomplete, Cpp(Struct))  |      Childof      |  Record(Definition, Cpp(Class))   |  2   |  0   |  0   |  0   |   0   
+  Record(Incomplete, Cpp(Struct))  |    Completedby    |  Record(Definition, Cpp(Struct))  |  1   |  0   |  0   |  0   |   0   [Use]
+    Sum(Definition, Cpp(Enum))     |      Childof      |  Record(Definition, Cpp(Class))   |  3   |  0   |  0   |  0   |   0   
+    Variable(Definition, Field)    |      Childof      |  Record(Definition, Cpp(Class))   |  27  |  0   |  0   |  0   |   0   
+    Variable(Definition, Field)    |      Childof      |  Record(Definition, Cpp(Struct))  |  7   |  0   |  0   |  0   |   0   
+    Variable(Definition, Field)    |       Typed       |  Record(Definition, Cpp(Class))   |  1   |  0   |  0   |  0   |   0   [Ignore]
+    Variable(Definition, Field)    |       Typed       |  Record(Definition, Cpp(Struct))  |  1   |  0   |  0   |  0   |   0   [Ignore]
+ Variable(Definition, Unspecified) |      Childof      | Function(Definition, Constructor) |  3   |  0   |  0   |  0   |   0   
+ Variable(Definition, Unspecified) |      Childof      | Function(Definition, Unspecified) |  71  |  0   |  0   |  0   |   0   
+ Variable(Definition, Unspecified) |       Typed       |               None                |  1   |  0   |  0   |  0   |   0   [Ignore]
+ Variable(Definition, Unspecified) |       Typed       |  Record(Definition, Cpp(Class))   |  1   |  0   |  0   |  0   |   0   [Ignore]
+ Variable(Definition, Unspecified) |       Typed       |  Record(Definition, Cpp(Struct))  |  1   |  0   |  0   |  0   |   0   [Ignore]
+ Variable(Incomplete, Unspecified) |       Typed       |              Absvar               |  1   |  0   |  0   |  0   |   0   [Ignore]
+ Variable(Incomplete, Unspecified) |       Typed       |  Record(Definition, Cpp(Struct))  |  1   |  0   |  0   |  0   |   0   [Ignore]

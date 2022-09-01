@@ -1,0 +1,641 @@
+
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>HTML 5 Boilerplate</title>
+
+        <style>
+        </style>
+    </head>
+    <body>
+    
+        
+<div>
+    <h1>db/memtable.h</h1>
+    <pre><span title="316">// Copyright (c) 2011 The LevelDB Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file. See the AUTHORS file for names of contributors.</span>
+
+#ifndef STORAGE_LEVELDB_DB_MEMTABLE_H_
+#define STORAGE_LEVELDB_DB_MEMTABLE_H_
+
+#include <string>
+
+#include "db/dbformat.h"
+#include "db/skiplist.h"
+#include "leveldb/db.h"
+#include "util/arena.h"
+
+namespace leveldb {
+
+class InternalKeyComparator;
+class MemTableIterator;
+
+class MemTable {
+ public:
+  // MemTables are reference counted.  The initial reference count
+  // is zero and the caller must call Ref() at least once.
+  explicit MemTable(const InternalKeyComparator& comparator);
+
+  MemTable(const MemTable&) = delete;
+  MemTable& operator=(const MemTable&) = delete;
+
+  // Increase reference count.
+  void Ref() { ++refs_; }
+
+  // Drop reference count.  Delete if no more references exist.
+  void Unref() {
+    --refs_;
+    assert(refs_ >= 0);
+    if (refs_ <= 0) {
+      delete this;
+    }
+  }
+
+  <span title="342">// Returns an estimate of the number of bytes of data in use by this
+  // data structure. It is safe to call when MemTable is being modified.</span>
+  <span title="437">size_t</span> <span title="438">ApproximateMemoryUsage</span>();
+
+  <span title="440">// Return an iterator that yields the contents of the memtable.
+  //
+  // The caller must ensure that the underlying MemTable remains live
+  // while the returned iterator is live.  The keys returned by this
+  // iterator are internal keys encoded by AppendInternalKey in the
+  // db/format.{h,cc} module.</span>
+  <span title="476">Iterator</span>* <span title="477">NewIterator</span>();
+
+  <span title="481">// Add an entry into memtable that maps key to value at the
+  // specified sequence number and with the specified type.
+  // Typically value will be empty if type==kTypeDeletion.</span>
+  <span title="522">void</span> <span title="524">Add</span>(<span title="525">SequenceNumber</span> <span title="527">seq</span>, <span title="529">ValueType</span> <span title="531">type</span>, const <span title="533">Slice</span>& <span title="535">key</span>,
+           const <span title="543">Slice</span>& <span title="544">value</span>);
+
+  <span title="549">// If memtable contains a value for key, store it in *value and return true.
+  // If memtable contains a deletion for key, store a NotFound() error
+  // in *status and return true.
+  // Else, return false.</span>
+  <span title="591">bool</span> <span title="592">Get</span>(const <span title="593">LookupKey</span>& <span title="597">key</span>, std::<span title="599">string</span>* <span title="603">value</span>, <span title="606">Status</span>* <span title="607">s</span>);
+
+ private:
+  friend class <span title="616">MemTableIterator</span>;
+  friend class <span title="623">MemTableBackwardIterator</span>;
+
+  struct <span title="631">KeyComparator</span> {
+    const <span title="644">InternalKeyComparator</span> <span title="650">comparator</span>;
+    <span title="653">explicit KeyComparator(const InternalKeyComparator& c) : comparator(c) {}</span>
+    <span title="675">int</span> <span title="679">operator()</span>(const <span title="683">char</span>* <span title="686">a</span>, const <span title="690">char</span>* <span title="691">b</span>) const;
+  };
+
+  typedef <span title="696">SkipList</span><const <span title="702">char</span>*, <span title="703">KeyComparator</span>> <span title="706">Table</span>;
+
+  <span title="712">~MemTable</span>();  // Private since only Unref() should be used to delete it
+
+  <span title="723">KeyComparator</span> <span title="728">comparator_</span>;
+  <span title="730">int</span> <span title="731">refs_</span>;
+  <span title="735">Arena</span> <span title="737">arena_</span>;
+  <span title="740">Table</span> <span title="742">table_</span>;
+};
+
+}  // namespace leveldb
+
+#endif  // STORAGE_LEVELDB_DB_MEMTABLE_H_
+</pre>
+</div>
+
+    
+        
+<div>
+    <h1>db/memtable.cc</h1>
+    <pre><span title="315">// Copyright (c) 2011 The LevelDB Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file. See the AUTHORS file for names of contributors.</span>
+
+#include "db/memtable.h"
+#include "db/dbformat.h"
+#include "leveldb/comparator.h"
+#include "leveldb/env.h"
+#include "leveldb/iterator.h"
+#include "util/coding.h"
+
+namespace leveldb {
+
+static Slice GetLengthPrefixedSlice(const char* data) {
+  uint32_t len;
+  const char* p = data;
+  p = GetVarint32Ptr(p, p + 5, &len);  // +5: we assume "p" is not corrupted
+  return Slice(p, len);
+}
+
+MemTable::MemTable(const InternalKeyComparator& comparator)
+    : comparator_(comparator), refs_(0), table_(comparator_, &arena_) {}
+
+MemTable::~MemTable() { assert(refs_ == 0); }
+
+size_t MemTable::ApproximateMemoryUsage() { return arena_.MemoryUsage(); }
+
+int MemTable::KeyComparator::operator()(const char* aptr,
+                                        const char* bptr) const {
+  // Internal keys are encoded as length-prefixed strings.
+  <span title="343">Slice</span> <span title="344">a</span> = <span title="345"></span><span title="346">GetLengthPrefixedSlice</span>(<span title="366">aptr</span>);
+  <span title="368">Slice</span> <span title="379">b</span> = <span title="389"></span><span title="390">GetLengthPrefixedSlice</span>(<span title="424">bptr</span>);
+  return <span title="427">comparator</span>.<span title="430">Compare</span>(<span title="432">a</span>, <span title="433">b</span>);
+}
+
+<span title="434">// Encode a suitable internal key target for "target" and return it.
+// Uses *scratch as scratch space, and the returned pointer will point
+// into this scratch space.</span>
+<span title="449">static const char* EncodeKey(std::string* scratch, const Slice& target) {
+  scratch->clear();
+  PutVarint32(scratch, target.size());
+  scratch->append(target.data(), target.size());
+  return scratch->data();
+}</span>
+
+class <span title="483">MemTableIterator</span> : public <span title="490">Iterator</span> {
+ public:
+  <span title="497">explicit MemTableIterator(MemTable::Table* table) : iter_(table) {}</span>
+
+  <span title="514">MemTableIterator</span>(const <span title="520">MemTableIterator</span>&<span title="521">)</span> = delete;
+  <span title="523">MemTableIterator</span>& <span title="526">operator=</span>(const <span title="530">MemTableIterator</span>&<span title="534">)</span> = delete;
+
+  <span title="537">~MemTableIterator</span>() override = default;
+
+  <span title="552">bool</span> <span title="555">Valid</span>() const override { return <span title="556">iter_</span>.<span title="558">Valid</span>(); }
+  <span title="559">void</span> <span title="561">Seek</span>(const <span title="564">Slice</span>& <span title="565">k</span>) override { <span title="569">iter_</span>.<span title="571">Seek</span>(<span title="572">EncodeKey</span>(&<span title="575">tmp_</span>, <span title="577">k</span>)); }
+  <span title="578">void</span> <span title="581">SeekToFirst</span>() override { <span title="582">iter_</span>.<span title="585">SeekToFirst</span>(); }
+  <span title="586">void</span> <span title="590">SeekToLast</span>() override { <span title="594">iter_</span>.<span title="596">SeekToLast</span>(); }
+  <span title="600">void</span> <span title="605">Next</span>() override { <span title="609">iter_</span>.<span title="611">Next</span>(); }
+  <span title="612">void</span> <span title="615">Prev</span>() override { <span title="619">iter_</span>.<span title="621">Prev</span>(); }
+  <span title="626">Slice</span> <span title="629">key</span>() const override { return <span title="639"></span><span title="640">GetLengthPrefixedSlice</span>(<span title="642">iter_</span>.<span title="645">key</span>()); }
+  <span title="646">Slice</span> <span title="651">value</span>() const override {
+    <span title="659">Slice</span> <span title="660">key_slice</span> = <span title="664"></span><span title="665">GetLengthPrefixedSlice</span>(<span title="669">iter_</span>.<span title="673">key</span>());
+    return <span title="676"></span><span title="677">GetLengthPrefixedSlice</span>(<span title="684">key_slice</span>.<span title="689">data</span>() + <span title="693">key_slice</span>.<span title="695">size</span>());
+  }
+
+  <span title="698">Status</span> <span title="701">status</span>() const override { return <span title="707"></span><span title="708">Status</span>::<span title="714">OK</span>(); }
+
+ private:
+  <span title="715">MemTable</span>::<span title="716">Table</span>::<span title="717">Iterator</span> <span title="718">iter_</span>;
+  std::<span title="720">string</span> <span title="722">tmp_</span>;  <span title="724">// For passing to EncodeKey</span>
+};
+
+<span title="733">Iterator</span>* <span title="736">MemTable</span>::<span title="739">NewIterator</span>() { return <span title="746">new</span> <span title="749">MemTableIterator</span>(&<span title="752">table_</span>); }
+
+<span title="753">void</span> <span title="755">MemTable</span>::<span title="756">Add</span>(<span title="757">SequenceNumber</span> <span title="762">s</span>, <span title="763">ValueType</span> <span title="764">type</span>, const <span title="765">Slice</span>& <span title="766">key</span>,
+                   const <span title="768">Slice</span>& <span title="770">value</span>) {
+  <span title="771">// Format of an entry is concatenation of:
+  //  key_size     : varint32 of internal_key.size()
+  //  key bytes    : char[internal_key.size()]
+  //  tag          : uint64((sequence << 8) | type)
+  //  value_size   : varint32 of value.size()
+  //  value bytes  : char[value.size()]</span>
+  <span title="791">size_t</span> <span title="792">key_size</span> = <span title="793">key</span>.<span title="795">size</span>();
+  <span title="798">size_t</span> <span title="801">val_size</span> = <span title="804">value</span>.<span title="806">size</span>();
+  <span title="808">size_t</span> <span title="809">internal_key_size</span> = <span title="814">key_size</span> + 8;
+  const <span title="820">size_t</span> <span title="821">encoded_len</span> = <span title="826">VarintLength</span>(<span title="830">internal_key_size</span>) +
+                             <span title="837">internal_key_size</span> + <span title="845">VarintLength</span>(<span title="850">val_size</span>) +
+                             <span title="851">val_size</span>;
+  <span title="852">char</span>* <span title="854">buf</span> = <span title="857">arena_</span>.<span title="859">Allocate</span>(<span title="860">encoded_len</span>);
+  <span title="866">char</span>* <span title="869">p</span> = <span title="870">EncodeVarint32</span>(<span title="874">buf</span>, <span title="875">internal_key_size</span>);
+  <span title="876">std::memcpy(p, key.data(), key_size)</span>;
+  <span title="883">p</span> += <span title="884">key_size</span>;
+  <span title="885">EncodeFixed64</span>(<span title="887">p</span>, (<span title="888">s</span> << 8) | <span title="889">type</span>);
+  <span title="891">p</span> += 8;
+  <span title="892">p</span> = <span title="893">EncodeVarint32</span>(<span title="895">p</span>, <span title="896">val_size</span>);
+  <span title="897">std::memcpy(p, value.data(), val_size)</span>;
+  <span title="904"></span><span title="905">assert</span>(<span title="906">p</span> + <span title="907">val_size</span> == <span title="909">buf</span> + <span title="911">encoded_len</span>);
+  <span title="912">table_</span>.<span title="915">Insert</span>(<span title="919">buf</span>);
+}
+
+<span title="921">bool</span> <span title="924">MemTable</span>::<span title="925">Get</span>(const <span title="927">LookupKey</span>& <span title="928">key</span>, std::<span title="929">string</span>* <span title="930">value</span>, <span title="931">Status</span>* <span title="932">s</span>) {
+  <span title="933">Slice</span> <span title="934">memkey</span> = <span title="936"></span><span title="937">key</span>.<span title="940">memtable_key</span>();
+  <span title="942">Table</span>::<span title="944">Iterator</span> <span title="945">iter</span>(&<span title="950">table_</span>);
+  <span title="952">iter</span>.<span title="954">Seek</span>(<span title="957">memkey</span>.<span title="959">data</span>());
+  if (<span title="960">iter</span>.<span title="962">Valid</span>()) {
+    <span title="963">// entry format is:
+    //    klength  varint32
+    //    userkey  char[klength]
+    //    tag      uint64
+    //    vlength  varint32
+    //    value    char[vlength]
+    // Check that it belongs to same user key.  We do not check the
+    // sequence number since the Seek() call above should have skipped
+    // all entries with overly large sequence numbers.</span>
+    const <span title="987">char</span>* <span title="988">entry</span> = <span title="989">iter</span>.<span title="991">key</span>();
+    <span title="995">uint32_t</span> <span title="997">key_length</span>;
+    const <span title="999">char</span>* <span title="1000">key_ptr</span> = <span title="1002">GetVarint32Ptr</span>(<span title="1004">entry</span>, <span title="1005">entry</span> + 5, &<span title="1006">key_length</span>);
+    if (<span title="1013">comparator_</span>.<span title="1016">comparator</span>.<span title="1020">user_comparator</span>()-><span title="1024">Compare</span>(
+            <span title="1032">Slice</span>(<span title="1035">key_ptr</span>, <span title="1037">key_length</span> - 8), <span title="1040">key</span>.<span title="1042">user_key</span>()) == 0) {
+      <span title="1043">// Correct user key</span>
+      const <span title="1046">uint64_t</span> <span title="1047">tag</span> = <span title="1048">DecodeFixed64</span>(<span title="1050">key_ptr</span> + <span title="1052">key_length</span> - 8);
+      switch (static_cast<<span title="1061">ValueType</span>>(<span title="1063">tag</span> & 0xff)) {
+        case <span title="1064">kTypeValue</span>: {
+          <span title="1065">Slice</span> <span title="1066">v</span> = <span title="1068"></span><span title="1069">GetLengthPrefixedSlice</span>(<span title="1073">key_ptr</span> + <span title="1074">key_length</span>);
+          <span title="1082">value</span>-><span title="1085">assign</span>(<span title="1086">v</span>.<span title="1088">data</span>(), <span title="1089">v</span>.<span title="1091">size</span>());
+          return true;
+        }
+        case <span title="1105">kTypeDeletion</span>:
+          <span title="1107">*s = Status::NotFound(Slice())</span>;
+          return true;
+      }
+    }
+  }
+  return false;
+}
+
+}  // namespace leveldb
+</pre>
+</div>
+
+    
+        
+<div>
+    <h1>db/skiplist.h</h1>
+    <pre>// Copyright (c) 2011 The LevelDB Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file. See the AUTHORS file for names of contributors.
+
+#ifndef STORAGE_LEVELDB_DB_SKIPLIST_H_
+#define STORAGE_LEVELDB_DB_SKIPLIST_H_
+
+// Thread safety
+// -------------
+//
+// Writes require external synchronization, most likely a mutex.
+// Reads require a guarantee that the SkipList will not be destroyed
+// while the read is in progress.  Apart from that, reads progress
+// without any internal locking or synchronization.
+//
+// Invariants:
+//
+// (1) Allocated nodes are never deleted until the SkipList is
+// destroyed.  This is trivially guaranteed by the code since we
+// never delete any skip list nodes.
+//
+// (2) The contents of a Node except for the next/prev pointers are
+// immutable after the Node has been linked into the SkipList.
+// Only Insert() modifies the list, and it is careful to initialize
+// a node and use release-stores to publish the nodes in one or
+// more lists.
+//
+// ... prev vs. next pointer ordering ...
+
+#include <atomic>
+#include <cassert>
+#include <cstdlib>
+
+#include "util/arena.h"
+#include "util/random.h"
+
+namespace leveldb {
+
+template <typename Key, class Comparator>
+class SkipList {
+ private:
+  struct Node;
+
+ public:
+  // Create a new SkipList object that will use "cmp" for comparing keys,
+  // and will allocate memory using "*arena".  Objects allocated in the arena
+  // must remain allocated for the lifetime of the skiplist object.
+  explicit SkipList(Comparator cmp, Arena* arena);
+
+  SkipList(const SkipList&) = delete;
+  SkipList& operator=(const SkipList&) = delete;
+
+  // Insert key into the list.
+  // REQUIRES: nothing that compares equal to key is currently in the list.
+  void Insert(const Key& key);
+
+  // Returns true iff an entry that compares equal to key is in the list.
+  bool Contains(const Key& key) const;
+
+  // Iteration over the contents of a skip list
+  class Iterator {
+   public:
+    // Initialize an iterator over the specified list.
+    // The returned iterator is not valid.
+    explicit Iterator(const SkipList* list);
+
+    // Returns true iff the iterator is positioned at a valid node.
+    bool Valid() const;
+
+    // Returns the key at the current position.
+    // REQUIRES: Valid()
+    const Key& key() const;
+
+    // Advances to the next position.
+    // REQUIRES: Valid()
+    void Next();
+
+    // Advances to the previous position.
+    // REQUIRES: Valid()
+    void Prev();
+
+    // Advance to the first entry with a key >= target
+    void Seek(const Key& target);
+
+    // Position at the first entry in list.
+    // Final state of iterator is Valid() iff list is not empty.
+    void SeekToFirst();
+
+    // Position at the last entry in list.
+    // Final state of iterator is Valid() iff list is not empty.
+    void SeekToLast();
+
+   private:
+    const SkipList* <span title="6">list_</span>;
+    Node* node_;
+    // Intentionally copyable
+  };
+
+ private:
+  enum { kMaxHeight = 12 };
+
+  inline int GetMaxHeight() const {
+    return max_height_.load(std::memory_order_relaxed);
+  }
+
+  Node* NewNode(const Key& key, int height);
+  int RandomHeight();
+  bool Equal(const Key& a, const Key& b) const { return (compare_(a, b) == 0); }
+
+  // Return true if key is greater than the data stored in "n"
+  bool KeyIsAfterNode(const Key& key, Node* n) const;
+
+  // Return the earliest node that comes at or after key.
+  // Return nullptr if there is no such node.
+  //
+  // If prev is non-null, fills prev[level] with pointer to previous
+  // node at "level" for every level in [0..max_height_-1].
+  Node* FindGreaterOrEqual(const Key& key, Node** prev) const;
+
+  // Return the latest node with a key < key.
+  // Return head_ if there is no such node.
+  Node* FindLessThan(const Key& key) const;
+
+  // Return the last node in the list.
+  // Return head_ if list is empty.
+  Node* FindLast() const;
+
+  // Immutable after construction
+  Comparator const compare_;
+  Arena* const arena_;  // Arena used for allocations of nodes
+
+  Node* const head_;
+
+  // Modified only by Insert().  Read racily by readers, but stale
+  // values are ok.
+  std::atomic<int> max_height_;  // Height of the entire list
+
+  // Read/written only by Insert().
+  Random rnd_;
+};
+
+// Implementation details follow
+template <typename Key, class Comparator>
+struct SkipList<Key, Comparator>::Node {
+  explicit Node(const Key& k) : key(k) {}
+
+  Key const key;
+
+  // Accessors/mutators for links.  Wrapped in methods so we can
+  // add the appropriate barriers as necessary.
+  Node* Next(int n) {
+    assert(n >= 0);
+    // Use an 'acquire load' so that we observe a fully initialized
+    // version of the returned Node.
+    return next_[n].load(std::memory_order_acquire);
+  }
+  void SetNext(int n, Node* x) {
+    assert(n >= 0);
+    // Use a 'release store' so that anybody who reads through this
+    // pointer observes a fully initialized version of the inserted node.
+    next_[n].store(x, std::memory_order_release);
+  }
+
+  // No-barrier variants that can be safely used in a few locations.
+  Node* NoBarrier_Next(int n) {
+    assert(n >= 0);
+    return next_[n].load(std::memory_order_relaxed);
+  }
+  void NoBarrier_SetNext(int n, Node* x) {
+    assert(n >= 0);
+    next_[n].store(x, std::memory_order_relaxed);
+  }
+
+ private:
+  // Array of length equal to the node height.  next_[0] is lowest level link.
+  std::atomic<Node*> next_[1];
+};
+
+template <typename Key, class Comparator>
+typename SkipList<Key, Comparator>::Node* SkipList<Key, Comparator>::NewNode(
+    const Key& key, int height) {
+  char* const node_memory = arena_->AllocateAligned(
+      sizeof(Node) + sizeof(std::atomic<Node*>) * (height - 1));
+  return new (node_memory) Node(key);
+}
+
+template <typename Key, class Comparator>
+inline SkipList<Key, Comparator>::Iterator::Iterator(const SkipList* list) {
+  list_ = list;
+  node_ = nullptr;
+}
+
+template <typename Key, class Comparator>
+inline bool SkipList<Key, Comparator>::Iterator::Valid() const {
+  return node_ != nullptr;
+}
+
+template <typename Key, class Comparator>
+inline const Key& SkipList<Key, Comparator>::Iterator::key() const {
+  assert(Valid());
+  return node_->key;
+}
+
+template <typename Key, class Comparator>
+inline void SkipList<Key, Comparator>::Iterator::Next() {
+  assert(Valid());
+  node_ = node_->Next(0);
+}
+
+template <typename Key, class Comparator>
+inline void SkipList<Key, Comparator>::Iterator::Prev() {
+  // Instead of using explicit "prev" links, we just search for the
+  // last node that falls before key.
+  assert(Valid());
+  node_ = list_->FindLessThan(node_->key);
+  if (node_ == list_->head_) {
+    node_ = nullptr;
+  }
+}
+
+template <typename Key, class Comparator>
+inline void SkipList<Key, Comparator>::Iterator::Seek(const Key& target) {
+  node_ = list_->FindGreaterOrEqual(target, nullptr);
+}
+
+template <typename Key, class Comparator>
+inline void SkipList<Key, Comparator>::Iterator::SeekToFirst() {
+  node_ = list_->head_->Next(0);
+}
+
+template <typename Key, class Comparator>
+inline void SkipList<Key, Comparator>::Iterator::SeekToLast() {
+  node_ = list_->FindLast();
+  if (node_ == list_->head_) {
+    node_ = nullptr;
+  }
+}
+
+template <typename Key, class Comparator>
+int SkipList<Key, Comparator>::RandomHeight() {
+  // Increase height with probability 1 in kBranching
+  static const unsigned int kBranching = 4;
+  int height = 1;
+  while (height < kMaxHeight && rnd_.OneIn(kBranching)) {
+    height++;
+  }
+  assert(height > 0);
+  assert(height <= kMaxHeight);
+  return height;
+}
+
+template <typename Key, class Comparator>
+bool SkipList<Key, Comparator>::KeyIsAfterNode(const Key& key, Node* n) const {
+  // null n is considered infinite
+  return (n != nullptr) && (compare_(n->key, key) < 0);
+}
+
+template <typename Key, class Comparator>
+typename SkipList<Key, Comparator>::Node*
+SkipList<Key, Comparator>::FindGreaterOrEqual(const Key& key,
+                                              Node** prev) const {
+  Node* x = head_;
+  int level = GetMaxHeight() - 1;
+  while (true) {
+    Node* next = x->Next(level);
+    if (KeyIsAfterNode(key, next)) {
+      // Keep searching in this list
+      x = next;
+    } else {
+      if (prev != nullptr) prev[level] = x;
+      if (level == 0) {
+        return next;
+      } else {
+        // Switch to next list
+        level--;
+      }
+    }
+  }
+}
+
+template <typename Key, class Comparator>
+typename SkipList<Key, Comparator>::Node*
+SkipList<Key, Comparator>::FindLessThan(const Key& key) const {
+  Node* x = head_;
+  int level = GetMaxHeight() - 1;
+  while (true) {
+    assert(x == head_ || compare_(x->key, key) < 0);
+    Node* next = x->Next(level);
+    if (next == nullptr || compare_(next->key, key) >= 0) {
+      if (level == 0) {
+        return x;
+      } else {
+        // Switch to next list
+        level--;
+      }
+    } else {
+      x = next;
+    }
+  }
+}
+
+template <typename Key, class Comparator>
+typename SkipList<Key, Comparator>::Node* SkipList<Key, Comparator>::FindLast()
+    const {
+  Node* x = head_;
+  int level = GetMaxHeight() - 1;
+  while (true) {
+    Node* next = x->Next(level);
+    if (next == nullptr) {
+      if (level == 0) {
+        return x;
+      } else {
+        // Switch to next list
+        level--;
+      }
+    } else {
+      x = next;
+    }
+  }
+}
+
+template <typename Key, class Comparator>
+SkipList<Key, Comparator>::SkipList(Comparator cmp, Arena* arena)
+    : compare_(cmp),
+      arena_(arena),
+      head_(NewNode(0 /* any key will do */, kMaxHeight)),
+      max_height_(1),
+      rnd_(0xdeadbeef) {
+  for (int i = 0; i < kMaxHeight; i++) {
+    head_->SetNext(i, nullptr);
+  }
+}
+
+template <typename Key, class Comparator>
+void <span title="10">SkipList</span><Key, Comparator>::Insert(const Key& key) {
+  // TODO(opt): We can use a barrier-free variant of FindGreaterOrEqual()
+  // here since Insert() is externally synchronized.
+  Node* prev[kMaxHeight];
+  Node* x = FindGreaterOrEqual(key, prev);
+
+  // Our data structure does not allow duplicate insertion
+  assert(x == nullptr || !Equal(key, x->key));
+
+  int height = <span title="55">RandomHeight()</span>;
+  if (height > GetMaxHeight()) {
+    for (int i = GetMaxHeight(); i < height; i++) {
+      prev[i] = head_;
+    }
+    // It is ok to mutate max_height_ without any synchronization
+    // with concurrent readers.  A concurrent reader that observes
+    // the new value of max_height_ will see either the old value of
+    // new level pointers from head_ (nullptr), or a new value set in
+    // the loop below.  In the former case the reader will
+    // immediately drop to the next level since nullptr sorts after all
+    // keys.  In the latter case the reader will use the new node.
+    max_height_.store(height, std::memory_order_relaxed);
+  }
+
+  x = NewNode(key, height);
+  for (int i = 0; i < height; i++) {
+    // NoBarrier_SetNext() suffices since we will add a barrier when
+    // we publish a pointer to "x" in prev[i].
+    x-><span title="89">NoBarrier_SetNext</span>(i, <span title="115">prev[i]->NoBarrier_Next(i)</span>);
+    prev[i]->SetNext(i, x);
+  }
+}
+
+template <typename Key, class Comparator>
+bool SkipList<Key, <span title="181">Comparator</span>>::Contains(const Key& key) const {
+  Node* <span title="258">x</span> = <span title="410">FindGreaterOrEqual</span>(<span title="414">key</span>, nullptr);
+  if (<span title="415">x</span> <span title="417">!=</span> nullptr && <span title="418">Equal</span>(<span title="421">key</span>, <span title="422">x</span>-><span title="423">key</span>)) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+}  // namespace leveldb
+
+#endif  // STORAGE_LEVELDB_DB_SKIPLIST_H_
+</pre>
+</div>
+
+    
+    </body>
+    </html>
