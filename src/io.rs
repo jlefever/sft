@@ -1,33 +1,19 @@
-use std::fmt::Arguments;
-use std::fs;
-use std::io;
+use std::{fs, io};
 
 use std::io::BufRead;
-use std::path::Path;
+use std::path::PathBuf;
 
-pub struct Writer(io::BufWriter<Box<dyn io::Write>>);
-
-impl Writer {
-    pub fn open(path: Option<&Path>) -> io::Result<Self> {
-        Ok(Self(io::BufWriter::new(match path {
-            None => Box::new(io::stdout().lock()),
-            Some(path) => Box::new(fs::File::create(path)?),
-        })))
-    }
-
-    pub fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        io::Write::write(&mut self.0, buf)
-    }
-
-    pub fn write_fmt(&mut self, fmt: Arguments) -> io::Result<()> {
-        io::Write::write_fmt(&mut self.0, fmt)
-    }
+pub fn open_bufwriter(path: Option<PathBuf>) -> io::Result<io::BufWriter<Box<dyn io::Write>>> {
+    Ok(io::BufWriter::new(match path {
+        None => Box::new(io::stdout().lock()),
+        Some(path) => Box::new(fs::File::create(path)?),
+    }))
 }
 
 pub struct Reader(io::BufReader<Box<dyn io::Read>>);
 
 impl Reader {
-    fn open(path: Option<&Path>) -> io::Result<Self> {
+    fn open(path: Option<PathBuf>) -> io::Result<Self> {
         Ok(Self(io::BufReader::new(match path {
             None => Box::new(io::stdin().lock()),
             Some(path) => Box::new(fs::File::open(path)?),
@@ -38,20 +24,17 @@ impl Reader {
 pub struct EntryReader(Reader);
 
 impl EntryReader {
-    pub fn open(path: Option<&Path>) -> io::Result<Self> {
+    pub fn open(path: Option<PathBuf>) -> io::Result<Self> {
         Ok(Self(Reader::open(path)?))
     }
 }
 
 impl IntoIterator for EntryReader {
-    type Item = Entry;
     type IntoIter = EntryIter;
+    type Item = Entry;
 
     fn into_iter(self) -> Self::IntoIter {
-        EntryIter {
-            reader: self.0,
-            buffer: String::new(),
-        }
+        EntryIter { reader: self.0, buffer: String::new() }
     }
 }
 
@@ -78,20 +61,17 @@ impl Iterator for EntryIter {
 pub struct EntryLineReader(Reader);
 
 impl EntryLineReader {
-    pub fn open(path: Option<&Path>) -> io::Result<Self> {
+    pub fn open(path: Option<PathBuf>) -> io::Result<Self> {
         Ok(Self(Reader::open(path)?))
     }
 }
 
 impl IntoIterator for EntryLineReader {
-    type Item = (String, Entry);
     type IntoIter = EntryLineIter;
+    type Item = (String, Entry);
 
     fn into_iter(self) -> Self::IntoIter {
-        EntryLineIter {
-            reader: self.0,
-            buffer: String::new(),
-        }
+        EntryLineIter { reader: self.0, buffer: String::new() }
     }
 }
 

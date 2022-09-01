@@ -1,7 +1,7 @@
 use crate::io::Entry;
 use crate::io::EntryLineReader;
 use crate::io::Ticket;
-use crate::io::Writer;
+use crate::io::open_bufwriter;
 
 use log;
 use std::collections::HashSet;
@@ -9,6 +9,7 @@ use std::error::Error;
 use std::fmt::Debug;
 use std::fs;
 
+use std::io::Write;
 use std::path::Path;
 use std::{path::PathBuf, time::Instant};
 
@@ -337,9 +338,7 @@ pub struct CliExcludeCommand {
 
 impl CliCommand for CliExcludeCommand {
     fn execute(&self) -> Result<(), Box<dyn Error>> {
-        let input = self.input.as_ref().map(PathBuf::as_path);
-        let output = self.output.as_ref().map(PathBuf::as_path);
-        let mut writer = Writer::open(output)?;
+        let mut writer = open_bufwriter(self.output.clone())?;
 
         let mut rules: Vec<Box<dyn Exclusion>> = Vec::new();
 
@@ -415,7 +414,7 @@ impl CliCommand for CliExcludeCommand {
         let mut num_lines = 0u128;
         let mut num_excluded = 0u128;
 
-        'outer: for (line, entry) in EntryLineReader::open(input)? {
+        'outer: for (line, entry) in EntryLineReader::open(self.input.clone())? {
             num_lines = num_lines + 1;
 
             for rule in &rules {
@@ -425,7 +424,7 @@ impl CliCommand for CliExcludeCommand {
                 }
             }
 
-            writer.write(line.as_bytes())?;
+            writer.write_all(line.as_bytes())?;
         }
 
         log::info!(

@@ -27,10 +27,8 @@ struct Cli {
 enum CliSubCommand {
     Display(commands::display::CliDisplayCommand),
     Exclude(commands::exclude::CliExcludeCommand),
-    // Dsm(commands::dsm::CliDsmCommand),
-    Summarize(commands::summarize::CliSummarizeCommand),
+    EdgeKinds(commands::edgekinds::CliEdgeKindsCommand),
     Format(commands::format::CliFormatCommand),
-    Html(commands::html::CliHtmlCommand),
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -54,10 +52,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(command) => match command {
             CliSubCommand::Exclude(com) => com.execute(),
             CliSubCommand::Display(com) => com.execute(),
-            // CliSubCommand::Dsm(com) => com.execute(),
-            CliSubCommand::Summarize(com) => com.execute(),
+            CliSubCommand::EdgeKinds(com) => com.execute(),
             CliSubCommand::Format(com) => com.execute(),
-            CliSubCommand::Html(com) => com.execute(),
         },
     }
 }

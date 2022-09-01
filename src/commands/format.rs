@@ -1,9 +1,10 @@
 use itertools::Itertools;
 
-use crate::io::{EntryReader, Writer};
+use crate::io::{EntryReader, open_bufwriter};
 use crate::ir::{EntityGraph, RawGraph, SpecGraph};
 
 use std::error::Error;
+use std::io::Write;
 use std::path::PathBuf;
 
 use super::CliCommand;
@@ -27,12 +28,7 @@ pub struct CliFormatCommand {
 
 impl CliCommand for CliFormatCommand {
     fn execute(&self) -> Result<(), Box<dyn Error>> {
-        let input = self.input.as_ref().map(PathBuf::as_path);
-        let output = self.output.as_ref().map(PathBuf::as_path);
-        let mut writer = Writer::open(output)?;
-
-        // Load graph
-        let reader = EntryReader::open(input)?;
+        let reader = EntryReader::open(self.input.clone())?;
         let raw_graph = RawGraph::try_from(reader)?;
         let spec_graph = SpecGraph::try_from(raw_graph)?;
         let entity_graph = EntityGraph::try_from(spec_graph)?;
@@ -44,14 +40,14 @@ impl CliCommand for CliFormatCommand {
         deps.sort();
 
         // Output
+        let mut writer = open_bufwriter(self.output.clone())?;
+
         for entity in entities {
-            let str = serde_json::to_string(&entity)?;
-            writer.write_fmt(format_args!("{}\n", str))?;
+            write!(writer, "{}\n", serde_json::to_string(&entity)?)?;
         }
 
         for dep in deps {
-            let str = serde_json::to_string(&dep)?;
-            writer.write_fmt(format_args!("{}\n", str))?;
+            write!(writer, "{}\n", serde_json::to_string(&dep)?)?;
         }
 
         Ok(())

@@ -1,9 +1,10 @@
 use dot_writer::{Attributes, DotWriter};
 
-use crate::io::{EntryReader, Writer};
+use crate::io::{EntryReader, open_bufwriter};
 use crate::ir::{Dep, Entity, EntityGraph, SpecGraph, RawGraph, NodeKind};
 
 use std::error::Error;
+use std::io::Write;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -32,21 +33,14 @@ pub struct CliDisplayCommand {
 
 impl CliCommand for CliDisplayCommand {
     fn execute(&self) -> Result<(), Box<dyn Error>> {
-        let input = self.input.as_ref().map(PathBuf::as_path);
-        let output = self.output.as_ref().map(PathBuf::as_path);
-        let mut writer = Writer::open(output)?;
-
-        // Load graph
         let start = Instant::now();
-        let reader = EntryReader::open(input)?;
+        let reader = EntryReader::open(self.input.clone())?;
         let graph = RawGraph::try_from(reader)?;
         log::debug!("Loaded raw graph in {} secs.", start.elapsed().as_secs_f32());
         let start = Instant::now();
         let graph = SpecGraph::try_from(graph)?;
         log::debug!("Loaded spec graph in {} secs.", start.elapsed().as_secs_f32());
         let graph = EntityGraph::try_from(graph)?;
-
-        println!("{:#?}", graph);
 
         // Setup graphviz stuff
         let mut output_bytes: Vec<u8> = Vec::new();
@@ -68,7 +62,7 @@ impl CliCommand for CliDisplayCommand {
         }
 
         // Write output
-        writer.write(&output_bytes)?;
+        open_bufwriter(self.output.clone())?.write_all(&output_bytes)?;
         Ok(())
     }
 }
