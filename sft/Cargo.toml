@@ -1,0 +1,17 @@
+[package]
+name = "sft"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "3.2.14", features = ["derive", "cargo"] }
+log = "0.4.17"
+stderrlog = "0.5.3"
+anyhow = "1.0.60"
+thiserror = "1.0.32"
+itertools = "0.10.3"
+ndarray = "0.15.6"
+ndarray-linalg = "0.15.0"
+ndarray-stats = "0.5.1"
+num-traits = "0.2.15"
+bimap = "0.6.2"

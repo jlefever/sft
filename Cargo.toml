@@ -2,4 +2,5 @@
 
 members = [
   "kythe-bridge",
+  "sft",
 ]
