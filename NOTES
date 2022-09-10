@@ -9,3 +9,10 @@ db/skiplist.h
 "{db/memtable.cc,db/memtable.h,db/skiplist.h}"
 
 dot -Grankdir=LR -Tsvg out.dot -O
+
+In-Group
+Ring
+Band
+Pool
+Troop
+Bloc

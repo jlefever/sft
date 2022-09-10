@@ -2,5 +2,11 @@
 
 members = [
   "kythe-bridge",
+  "kythe-runner",
   "sft",
 ]
+
+[patch.crates-io]
+# Use this fork to avoid cargo deadlock
+# See https://github.com/rust-ml/linfa/pull/243
+linfa = { git = "https://github.com/gkobeaga/linfa" }
